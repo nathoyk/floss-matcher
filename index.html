@@ -86,6 +86,21 @@
     <!-- On iPhone, this will let you either pick from Photos or use the camera -->
     <input type="file" id="fileInput" accept="image/*" capture="environment">
 
+    <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+        <button id="setWhiteBtn">Tap image to set white reference</button>
+        <label>
+            Matches to show:
+            <select id="matchCount">
+                <option value="3">3</option>
+                <option value="5" selected>5</option>
+            </select>
+        </label>
+    </div>
+
+    <div id="wbStatus" class="row" style="margin-top:6px; font-size:0.85rem; opacity:0.8;">
+        No white reference set. For better accuracy, include a white/neutral card in your photo and set it as reference.
+    </div>
+
     <div id="canvasWrapper">
         <canvas id="imageCanvas"></canvas>
     </div>
@@ -105,16 +120,25 @@
         // Global palette (filled after JSON loads, with Lab precomputed)
         let FLOSS_COLORS = [];
 
-        const fileInput   = document.getElementById('fileInput');
-        const hiddenImage = document.getElementById('hiddenImage');
-        const canvas      = document.getElementById('imageCanvas');
-        const ctx         = canvas.getContext('2d');
+        // White-balance calibration state
+        let calibrationMode = false;
+        let whiteRef = null;              // {r,g,b} of reference
+        let wbFactors = { r: 1, g: 1, b: 1 }; // per-channel gain
 
-        const resultsBox   = document.getElementById('results');
-        const sampleSwatch = document.getElementById('sampleSwatch');
-        const rgbText      = document.getElementById('rgbText');
-        const bestMatchDiv = document.getElementById('bestMatch');
-        const matchesList  = document.getElementById('matchesList');
+        const fileInput     = document.getElementById('fileInput');
+        const hiddenImage   = document.getElementById('hiddenImage');
+        const canvas        = document.getElementById('imageCanvas');
+        const ctx           = canvas.getContext('2d');
+
+        const resultsBox    = document.getElementById('results');
+        const sampleSwatch  = document.getElementById('sampleSwatch');
+        const rgbText       = document.getElementById('rgbText');
+        const bestMatchDiv  = document.getElementById('bestMatch');
+        const matchesList   = document.getElementById('matchesList');
+
+        const setWhiteBtn   = document.getElementById('setWhiteBtn');
+        const matchCountSel = document.getElementById('matchCount');
+        const wbStatus      = document.getElementById('wbStatus');
 
         // --- 1. Load DMC palette from JSON and precompute Lab values ---
         fetch('dmc_palette.json')
@@ -136,7 +160,17 @@
                 alert('Could not load DMC palette. Check that dmc_palette.json is in the same folder as index.html.');
             });
 
-        // --- 2. Handle file selection (photo or camera) ---
+        // --- 2. White reference button ---
+        setWhiteBtn.addEventListener('click', () => {
+            if (!canvas.width || !canvas.height) {
+                alert('Please load a photo first, then tap the white/neutral card in the image.');
+                return;
+            }
+            calibrationMode = true;
+            wbStatus.textContent = 'Calibration mode: tap a white/neutral card area in the image to set white reference.';
+        });
+
+        // --- 3. Handle file selection (photo or camera) ---
         fileInput.addEventListener('change', function (event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -145,6 +179,11 @@
             reader.onload = function (e) {
                 hiddenImage.onload = function () {
                     drawImageToCanvas(hiddenImage);
+                    // Reset calibration when a new image is loaded
+                    calibrationMode = false;
+                    whiteRef = null;
+                    wbFactors = { r: 1, g: 1, b: 1 };
+                    wbStatus.textContent = 'No white reference set. For better accuracy, include a white/neutral card in your photo and set it as reference.';
                 };
                 hiddenImage.src = e.target.result;
             };
@@ -171,34 +210,94 @@
             resultsBox.style.display = 'none';
         }
 
-        // --- 3. When user taps/clicks the canvas, sample that pixel ---
+        // --- 4. When user taps/clicks the canvas, sample that pixel ---
         canvas.addEventListener('click', function (e) {
             if (!canvas.width || !canvas.height) return;
-
-            if (!FLOSS_COLORS.length) {
-                alert('DMC palette not loaded yet. Please wait a moment or refresh.');
-                return;
-            }
 
             const rect = canvas.getBoundingClientRect();
             const x = Math.floor(e.clientX - rect.left);
             const y = Math.floor(e.clientY - rect.top);
 
             const pixel = ctx.getImageData(x, y, 1, 1).data;
-            const r = pixel[0];
-            const g = pixel[1];
-            const b = pixel[2];
+            const rawR = pixel[0];
+            const rawG = pixel[1];
+            const rawB = pixel[2];
 
-            showSampleAndMatches(r, g, b);
+            // If we're in calibration mode, treat this tap as white reference
+            if (calibrationMode) {
+                calibrationMode = false;
+                setWhiteReference(rawR, rawG, rawB);
+                return;
+            }
+
+            if (!FLOSS_COLORS.length) {
+                alert('DMC palette not loaded yet. Please wait a moment or refresh.');
+                return;
+            }
+
+            const corrected = applyWhiteBalance(rawR, rawG, rawB);
+            showSampleAndMatches(corrected.r, corrected.g, corrected.b);
         });
 
-        // --- 4. Show sampled colour + top N closest DMC matches (ΔE2000) ---
+        // --- 5. Set white reference and compute factors ---
+        function setWhiteReference(r, g, b) {
+            // Avoid using a very dark area as "white"
+            const brightness = (r + g + b) / 3;
+            if (brightness < 80) {
+                alert('That area is too dark to be a white reference. Please choose a brighter white/neutral area.');
+                wbStatus.textContent = 'White reference not set – chosen area was too dark.';
+                return;
+            }
+
+            whiteRef = { r, g, b };
+            wbFactors = computeWbFactors(r, g, b);
+
+            const refHex = rgbToHex(r, g, b);
+            wbStatus.innerHTML = `
+                White reference set at RGB (${r}, ${g}, ${b}) | Hex ${refHex}.
+                Future samples will be adjusted using this reference.
+            `;
+        }
+
+        function computeWbFactors(r, g, b) {
+            // Scale each channel so the reference maps close to 255
+            const epsilon = 1; // avoid division by 0
+            const rr = Math.max(r, epsilon);
+            const gg = Math.max(g, epsilon);
+            const bb = Math.max(b, epsilon);
+            const target = 255;
+
+            return {
+                r: target / rr,
+                g: target / gg,
+                b: target / bb
+            };
+        }
+
+        function applyWhiteBalance(r, g, b) {
+            if (!whiteRef) {
+                return { r, g, b };
+            }
+            let cr = r * wbFactors.r;
+            let cg = g * wbFactors.g;
+            let cb = b * wbFactors.b;
+
+            // Clamp to 0–255 and round
+            cr = Math.min(255, Math.max(0, Math.round(cr)));
+            cg = Math.min(255, Math.max(0, Math.round(cg)));
+            cb = Math.min(255, Math.max(0, Math.round(cb)));
+
+            return { r: cr, g: cg, b: cb };
+        }
+
+        // --- 6. Show sampled colour + top N closest DMC matches (ΔE2000) ---
         function showSampleAndMatches(r, g, b) {
             const hex = rgbToHex(r, g, b);
             sampleSwatch.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
-            rgbText.textContent = `RGB: (${r}, ${g}, ${b})  |  Hex: ${hex}`;
+            rgbText.textContent = `RGB (after white-balance): (${r}, ${g}, ${b})  |  Hex: ${hex}`;
 
-            const topMatches = findClosestFlosses(r, g, b, 5); // top 5 (or fewer if you prefer)
+            const count = parseInt(matchCountSel.value, 10) || 5;
+            const topMatches = findClosestFlosses(r, g, b, count);
 
             if (!topMatches.length) {
                 bestMatchDiv.textContent = 'No matches found.';
@@ -219,7 +318,7 @@
                 </div>
             `;
 
-            // Build list of remaining matches (2nd–5th)
+            // Build list of remaining matches
             let listHtml = '';
             for (let i = 1; i < topMatches.length; i++) {
                 const m = topMatches[i];
@@ -238,7 +337,7 @@
             resultsBox.style.display = 'block';
         }
 
-        // --- 5. Find top N closest matches using Lab + ΔE2000 ---
+        // --- 7. Find top N closest matches using Lab + ΔE2000 ---
         function findClosestFlosses(r, g, b, count) {
             const sampleLab = rgbToLab(r, g, b);
             const withDistances = FLOSS_COLORS.map(fl => ({
@@ -249,7 +348,7 @@
             return withDistances.slice(0, Math.min(count, withDistances.length));
         }
 
-        // --- 6. Map ΔE2000 to a simple quality label ---
+        // --- 8. Map ΔE2000 to a simple quality label ---
         function qualityLabel(dE) {
             if (dE < 1)   return 'Perfect / indistinguishable';
             if (dE < 2)   return 'Excellent match';
@@ -259,7 +358,7 @@
             return 'Rough / far off';
         }
 
-        // --- 7. RGB -> Lab conversion helpers ---
+        // --- 9. RGB -> Lab conversion helpers ---
 
         // Convert sRGB (0–255) to Lab (D65)
         function rgbToLab(r, g, b) {
@@ -306,7 +405,7 @@
                 : (t / (3 * Math.pow(delta, 2))) + (4 / 29);
         }
 
-        // --- 8. ΔE2000 implementation ---
+        // --- 10. ΔE2000 implementation ---
         function deltaE2000(lab1, lab2) {
             const L1 = lab1.L;
             const a1 = lab1.a;
@@ -373,8 +472,8 @@
             const deltaTheta =
                 30 * Math.exp(-((HbarPrime - 275) / 25) * ((HbarPrime - 275) / 25));
             const R_C = 2 * Math.sqrt(Math.pow(CbarPrime, 7) / (Math.pow(CbarPrime, 7) + Math.pow(25, 7)));
-            const S_L = 1 + ((0.015 * (L1 + L2) / 2 - 50) * (0.015 * (L1 + L2) / 2 - 50)) /
-                        Math.sqrt(20 + ((0.015 * (L1 + L2) / 2 - 50) * (0.015 * (L1 + L2) / 2 - 50)));
+            const Lbar = (L1 + L2) / 2;
+            const S_L = 1 + ((0.015 * (Lbar - 50) * (Lbar - 50)) / Math.sqrt(20 + (Lbar - 50) * (Lbar - 50)));
             const S_C = 1 + 0.045 * CbarPrime;
             const S_H = 1 + 0.015 * CbarPrime * T;
             const R_T = -Math.sin(deg2rad(2 * deltaTheta)) * R_C;
@@ -403,7 +502,7 @@
             return (rad * 180) / Math.PI;
         }
 
-        // --- 9. Utility: RGB → Hex string ---
+        // --- 11. Utility: RGB → Hex string ---
         function rgbToHex(r, g, b) {
             return "#" + [r, g, b].map(function (x) {
                 const hex = x.toString(16);
@@ -411,8 +510,6 @@
             }).join("");
         }
     </script>
-
-
 
 </body>
 </html>

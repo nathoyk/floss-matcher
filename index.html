@@ -102,7 +102,7 @@
         const flossDesc    = document.getElementById('flossDesc');
         const distanceText = document.getElementById('distanceText');
 
-        // --- 1. Load DMC palette from JSON ---
+        // --- 1. Load DMC palette from JSON and precompute Lab values ---
         fetch('dmc_palette.json')
             .then(response => {
                 if (!response.ok) {
@@ -111,7 +111,10 @@
                 return response.json();
             })
             .then(data => {
-                FLOSS_COLORS = data;
+                FLOSS_COLORS = data.map(c => ({
+                    ...c,
+                    lab: rgbToLab(c.r, c.g, c.b)
+                }));
                 console.log('Loaded DMC colours:', FLOSS_COLORS.length);
             })
             .catch(err => {
@@ -175,7 +178,7 @@
             showSampleAndMatch(r, g, b);
         });
 
-        // --- 4. Show sampled colour + closest DMC match ---
+        // --- 4. Show sampled colour + closest DMC match (ΔE2000) ---
         function showSampleAndMatch(r, g, b) {
             const hex = rgbToHex(r, g, b);
             sampleSwatch.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
@@ -185,22 +188,19 @@
 
             flossName.textContent = `${match.code} – ${match.name}`;
             flossDesc.textContent = `DMC RGB (${match.r}, ${match.g}, ${match.b})`;
-            distanceText.textContent = `Distance score (smaller = closer): ${match.distance.toFixed(1)}`;
+            distanceText.textContent = `ΔE2000 (smaller = closer): ${match.distance.toFixed(2)}`;
 
             resultsBox.style.display = 'block';
         }
 
-        // --- 5. Colour distance (simple RGB for now) ---
+        // --- 5. Colour distance using Lab + ΔE2000 ---
         function findClosestFloss(r, g, b) {
+            const sampleLab = rgbToLab(r, g, b);
             let best = null;
             let bestDist = Infinity;
 
             FLOSS_COLORS.forEach(fl => {
-                const dr = fl.r - r;
-                const dg = fl.g - g;
-                const db = fl.b - b;
-                const dist = Math.sqrt(dr*dr + dg*dg + db*db);
-
+                const dist = deltaE2000(sampleLab, fl.lab);
                 if (dist < bestDist) {
                     bestDist = dist;
                     best = fl;
@@ -210,7 +210,151 @@
             return { ...best, distance: bestDist };
         }
 
-        // --- 6. Utility: RGB → Hex string ---
+        // --- 6. RGB -> Lab conversion helpers ---
+
+        // Convert sRGB (0–255) to Lab (D65)
+        function rgbToLab(r, g, b) {
+            // 1) Normalize to 0–1
+            let R = r / 255;
+            let G = g / 255;
+            let B = b / 255;
+
+            // 2) Linearize sRGB
+            R = R <= 0.04045 ? R / 12.92 : Math.pow((R + 0.055) / 1.055, 2.4);
+            G = G <= 0.04045 ? G / 12.92 : Math.pow((G + 0.055) / 1.055, 2.4);
+            B = B <= 0.04045 ? B / 12.92 : Math.pow((B + 0.055) / 1.055, 2.4);
+
+            // 3) Convert to XYZ (Observer = 2°, Illuminant = D65)
+            let X = R * 0.4124 + G * 0.3576 + B * 0.1805;
+            let Y = R * 0.2126 + G * 0.7152 + B * 0.0722;
+            let Z = R * 0.0193 + G * 0.1192 + B * 0.9505;
+
+            // Reference white D65
+            const refX = 0.95047;
+            const refY = 1.00000;
+            const refZ = 1.08883;
+
+            X /= refX;
+            Y /= refY;
+            Z /= refZ;
+
+            // 4) XYZ to Lab
+            X = xyzToLabHelper(X);
+            Y = xyzToLabHelper(Y);
+            Z = xyzToLabHelper(Z);
+
+            const L = 116 * Y - 16;
+            const a = 500 * (X - Y);
+            const bVal = 200 * (Y - Z);
+
+            return { L, a, b: bVal };
+        }
+
+        function xyzToLabHelper(t) {
+            const delta = 6 / 29;
+            return t > Math.pow(delta, 3)
+                ? Math.cbrt(t)
+                : (t / (3 * Math.pow(delta, 2))) + (4 / 29);
+        }
+
+        // --- 7. ΔE2000 implementation ---
+        function deltaE2000(lab1, lab2) {
+            // Implementation adapted from standard CIEDE2000 formula
+            const L1 = lab1.L;
+            const a1 = lab1.a;
+            const b1 = lab1.b;
+            const L2 = lab2.L;
+            const a2 = lab2.a;
+            const b2 = lab2.b;
+
+            const kL = 1;
+            const kC = 1;
+            const kH = 1;
+
+            const C1 = Math.sqrt(a1 * a1 + b1 * b1);
+            const C2 = Math.sqrt(a2 * a2 + b2 * b2);
+            const Cbar = (C1 + C2) / 2.0;
+
+            const Cbar7 = Math.pow(Cbar, 7);
+            const G = 0.5 * (1 - Math.sqrt(Cbar7 / (Cbar7 + Math.pow(25, 7))));
+
+            const a1Prime = (1 + G) * a1;
+            const a2Prime = (1 + G) * a2;
+
+            const C1Prime = Math.sqrt(a1Prime * a1Prime + b1 * b1);
+            const C2Prime = Math.sqrt(a2Prime * a2Prime + b2 * b2);
+            const CbarPrime = (C1Prime + C2Prime) / 2.0;
+
+            const h1Prime = calcHuePrime(b1, a1Prime);
+            const h2Prime = calcHuePrime(b2, a2Prime);
+
+            let deltahPrime;
+            const diffh = h2Prime - h1Prime;
+            if (C1Prime * C2Prime === 0) {
+                deltahPrime = 0;
+            } else if (Math.abs(diffh) <= 180) {
+                deltahPrime = diffh;
+            } else if (diffh > 180) {
+                deltahPrime = diffh - 360;
+            } else {
+                deltahPrime = diffh + 360;
+            }
+
+            const deltaLPrime = L2 - L1;
+            const deltaCPrime = C2Prime - C1Prime;
+            const deltaHPrime = 2 * Math.sqrt(C1Prime * C2Prime) * Math.sin(deg2rad(deltahPrime / 2));
+
+            let HbarPrime;
+            if (C1Prime * C2Prime === 0) {
+                HbarPrime = h1Prime + h2Prime;
+            } else if (Math.abs(h1Prime - h2Prime) <= 180) {
+                HbarPrime = (h1Prime + h2Prime) / 2;
+            } else if ((h1Prime + h2Prime) < 360) {
+                HbarPrime = (h1Prime + h2Prime + 360) / 2;
+            } else {
+                HbarPrime = (h1Prime + h2Prime - 360) / 2;
+            }
+
+            const T =
+                1 -
+                0.17 * Math.cos(deg2rad(HbarPrime - 30)) +
+                0.24 * Math.cos(deg2rad(2 * HbarPrime)) +
+                0.32 * Math.cos(deg2rad(3 * HbarPrime + 6)) -
+                0.20 * Math.cos(deg2rad(4 * HbarPrime - 63));
+
+            const deltaTheta =
+                30 * Math.exp(-((HbarPrime - 275) / 25) * ((HbarPrime - 275) / 25));
+            const R_C = 2 * Math.sqrt(Math.pow(CbarPrime, 7) / (Math.pow(CbarPrime, 7) + Math.pow(25, 7)));
+            const S_L = 1 + ((0.015 * (L1 + L2) / 2 - 50) * (0.015 * (L1 + L2) / 2 - 50)) / Math.sqrt(20 + ((0.015 * (L1 + L2) / 2 - 50) * (0.015 * (L1 + L2) / 2 - 50)));
+            const S_C = 1 + 0.045 * CbarPrime;
+            const S_H = 1 + 0.015 * CbarPrime * T;
+            const R_T = -Math.sin(deg2rad(2 * deltaTheta)) * R_C;
+
+            const dE = Math.sqrt(
+                Math.pow(deltaLPrime / (kL * S_L), 2) +
+                Math.pow(deltaCPrime / (kC * S_C), 2) +
+                Math.pow(deltaHPrime / (kH * S_H), 2) +
+                R_T * (deltaCPrime / (kC * S_C)) * (deltaHPrime / (kH * S_H))
+            );
+
+            return dE;
+        }
+
+        function calcHuePrime(b, aPrime) {
+            if (aPrime === 0 && b === 0) return 0;
+            const hue = rad2deg(Math.atan2(b, aPrime));
+            return hue >= 0 ? hue : hue + 360;
+        }
+
+        function deg2rad(deg) {
+            return (deg * Math.PI) / 180;
+        }
+
+        function rad2deg(rad) {
+            return (rad * 180) / Math.PI;
+        }
+
+        // --- 8. Utility: RGB → Hex string ---
         function rgbToHex(r, g, b) {
             return "#" + [r, g, b].map(function (x) {
                 const hex = x.toString(16);
@@ -218,6 +362,7 @@
             }).join("");
         }
     </script>
+
 
 </body>
 </html>

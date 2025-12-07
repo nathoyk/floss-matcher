@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Floss Matcher PoC</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 10px;
+        }
+        h1 {
+            font-size: 1.4rem;
+            margin-bottom: 0.5rem;
+        }
+        #canvasWrapper {
+            margin-top: 10px;
+            border: 1px solid #ccc;
+            display: inline-block;
+        }
+        canvas {
+            max-width: 100%;
+            height: auto;
+            cursor: crosshair;
+        }
+        #results {
+            margin-top: 15px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #fafafa;
+        }
+        .color-swatch {
+            width: 50px;
+            height: 50px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 10px;
+        }
+        .row {
+            margin: 6px 0;
+        }
+        code {
+            background: #eee;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Floss Matcher PoC</h1>
+    <p>
+        1. Choose or take a photo of your threads.<br>
+        2. Tap on the image to sample a colour.<br>
+        3. The app will show the nearest match from a tiny demo palette.
+    </p>
+
+    <!-- On iPhone, this will let you either pick from Photos or use the camera -->
+    <input type="file" id="fileInput" accept="image/*" capture="environment">
+
+    <div id="canvasWrapper">
+        <canvas id="imageCanvas"></canvas>
+    </div>
+
+    <div id="results" style="display:none;">
+        <div class="row">
+            <strong>Sampled colour:</strong>
+        </div>
+        <div class="row">
+            <div id="sampleSwatch" class="color-swatch"></div>
+            <span id="rgbText"></span>
+        </div>
+        <div class="row">
+            <strong>Closest floss match (demo palette):</strong>
+        </div>
+        <div class="row">
+            <span id="flossName"></span><br>
+            <span id="flossDesc"></span><br>
+            <span id="distanceText"></span>
+        </div>
+    </div>
+
+    <!-- Hidden image element used for loading -->
+    <img id="hiddenImage" alt="" style="display:none;">
+
+    <script>
+        // --- Tiny demo floss palette (we'll expand this later) ---
+        const FLOSS_COLORS = [
+            { name: "DMC 321",  description: "Red",         r: 194, g: 24,  b: 45 },
+            { name: "DMC 666",  description: "Bright Red",  r: 227, g: 29,  b: 66 },
+            { name: "DMC 699",  description: "Green",       r: 0,   g: 92,  b: 49 },
+            { name: "DMC 742",  description: "Tangerine",   r: 255, g: 191, b: 87 },
+            { name: "DMC 310",  description: "Black",       r: 0,   g: 0,   b: 0 },
+            { name: "DMC 5200", description: "Snow White",  r: 255, g: 255, b: 255 }
+        ];
+
+        const fileInput   = document.getElementById('fileInput');
+        const hiddenImage = document.getElementById('hiddenImage');
+        const canvas      = document.getElementById('imageCanvas');
+        const ctx         = canvas.getContext('2d');
+
+        const resultsBox   = document.getElementById('results');
+        const sampleSwatch = document.getElementById('sampleSwatch');
+        const rgbText      = document.getElementById('rgbText');
+        const flossName    = document.getElementById('flossName');
+        const flossDesc    = document.getElementById('flossDesc');
+        const distanceText = document.getElementById('distanceText');
+
+        // -- 1. Handle file selection (photo or camera) --
+        fileInput.addEventListener('change', function (event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                hiddenImage.onload = function () {
+                    drawImageToCanvas(hiddenImage);
+                };
+                hiddenImage.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Draw the loaded image to the canvas, scaled to fit
+        function drawImageToCanvas(img) {
+            const maxDisplayWidth = 500; // pixels
+            let displayWidth = img.width;
+            let displayHeight = img.height;
+
+            if (displayWidth > maxDisplayWidth) {
+                const scale = maxDisplayWidth / displayWidth;
+                displayWidth = maxDisplayWidth;
+                displayHeight = img.height * scale;
+            }
+
+            canvas.width = displayWidth;
+            canvas.height = displayHeight;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            resultsBox.style.display = 'none';
+        }
+
+        // -- 2. When user taps/clicks the canvas, sample that pixel --
+        canvas.addEventListener('click', function (e) {
+            if (!canvas.width || !canvas.height) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor(e.clientX - rect.left);
+            const y = Math.floor(e.clientY - rect.top);
+
+            const pixel = ctx.getImageData(x, y, 1, 1).data;
+            const r = pixel[0];
+            const g = pixel[1];
+            const b = pixel[2];
+
+            showSampleAndMatch(r, g, b);
+        });
+
+        // Show sampled colour and its closest floss match
+        function showSampleAndMatch(r, g, b) {
+            const hex = rgbToHex(r, g, b);
+            sampleSwatch.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+            rgbText.textContent = `RGB: (${r}, ${g}, ${b})  |  Hex: ${hex}`;
+
+            const match = findClosestFloss(r, g, b);
+
+            flossName.textContent = `${match.name}`;
+            flossDesc.textContent = `${match.description} – RGB (${match.r}, ${match.g}, ${match.b})`;
+            distanceText.textContent = `Distance score (smaller = closer): ${match.distance.toFixed(1)}`;
+
+            resultsBox.style.display = 'block';
+        }
+
+        // Simple RGB distance (we’ll upgrade this later)
+        function findClosestFloss(r, g, b) {
+            let best = null;
+            let bestDist = Infinity;
+
+            FLOSS_COLORS.forEach(fl => {
+                const dr = fl.r - r;
+                const dg = fl.g - g;
+                const db = fl.b - b;
+                const dist = Math.sqrt(dr*dr + dg*dg + db*db);
+
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = fl;
+                }
+            });
+
+            return { ...best, distance: bestDist };
+        }
+
+        // Utility: RGB → Hex string
+        function rgbToHex(r, g, b) {
+            return "#" + [r, g, b].map(function (x) {
+                const hex = x.toString(16);
+                return hex.length === 1 ? "0" + hex : hex;
+            }).join("");
+        }
+    </script>
+</body>
+</html>

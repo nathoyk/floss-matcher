@@ -48,6 +48,31 @@
             padding: 2px 4px;
             border-radius: 3px;
         }
+
+        .match-item {
+            margin-bottom: 4px;
+            font-size: 0.9rem;
+        }
+
+        .match-swatch {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            border: 1px solid #ccc;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+
+        .match-code {
+            font-weight: 600;
+        }
+
+        .match-label {
+            font-style: italic;
+            opacity: 0.8;
+        }
+
     </style>
 </head>
 <body>
@@ -67,27 +92,17 @@
 
     <div id="results" style="display:none;">
         <div class="row">
-            <strong>Sampled colour:</strong>
+            <strong>Closest floss matches:</strong>
         </div>
-        <div class="row">
-            <div id="sampleSwatch" class="color-swatch"></div>
-            <span id="rgbText"></span>
-        </div>
-        <div class="row">
-            <strong>Closest floss match (demo palette):</strong>
-        </div>
-        <div class="row">
-            <span id="flossName"></span><br>
-            <span id="flossDesc"></span><br>
-            <span id="distanceText"></span>
-        </div>
+        <div class="row" id="bestMatch"></div>
+        <div class="row" id="matchesList"></div>
     </div>
 
     <!-- Hidden image element used for loading -->
     <img id="hiddenImage" alt="" style="display:none;">
 
     <script>
-        // Global palette (filled after JSON loads)
+        // Global palette (filled after JSON loads, with Lab precomputed)
         let FLOSS_COLORS = [];
 
         const fileInput   = document.getElementById('fileInput');
@@ -98,9 +113,8 @@
         const resultsBox   = document.getElementById('results');
         const sampleSwatch = document.getElementById('sampleSwatch');
         const rgbText      = document.getElementById('rgbText');
-        const flossName    = document.getElementById('flossName');
-        const flossDesc    = document.getElementById('flossDesc');
-        const distanceText = document.getElementById('distanceText');
+        const bestMatchDiv = document.getElementById('bestMatch');
+        const matchesList  = document.getElementById('matchesList');
 
         // --- 1. Load DMC palette from JSON and precompute Lab values ---
         fetch('dmc_palette.json')
@@ -175,42 +189,77 @@
             const g = pixel[1];
             const b = pixel[2];
 
-            showSampleAndMatch(r, g, b);
+            showSampleAndMatches(r, g, b);
         });
 
-        // --- 4. Show sampled colour + closest DMC match (ΔE2000) ---
-        function showSampleAndMatch(r, g, b) {
+        // --- 4. Show sampled colour + top N closest DMC matches (ΔE2000) ---
+        function showSampleAndMatches(r, g, b) {
             const hex = rgbToHex(r, g, b);
             sampleSwatch.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
             rgbText.textContent = `RGB: (${r}, ${g}, ${b})  |  Hex: ${hex}`;
 
-            const match = findClosestFloss(r, g, b);
+            const topMatches = findClosestFlosses(r, g, b, 5); // top 5 (or fewer if you prefer)
 
-            flossName.textContent = `${match.code} – ${match.name}`;
-            flossDesc.textContent = `DMC RGB (${match.r}, ${match.g}, ${match.b})`;
-            distanceText.textContent = `ΔE2000 (smaller = closer): ${match.distance.toFixed(2)}`;
+            if (!topMatches.length) {
+                bestMatchDiv.textContent = 'No matches found.';
+                matchesList.innerHTML = '';
+                resultsBox.style.display = 'block';
+                return;
+            }
+
+            const best = topMatches[0];
+            const bestLabel = qualityLabel(best.distance);
+
+            bestMatchDiv.innerHTML = `
+                <div class="match-item">
+                    <span class="match-swatch" style="background-color: rgb(${best.r}, ${best.g}, ${best.b});"></span>
+                    <span class="match-code">${best.code} – ${best.name}</span><br>
+                    <span>ΔE2000: ${best.distance.toFixed(2)} </span>
+                    <span class="match-label">(${bestLabel})</span>
+                </div>
+            `;
+
+            // Build list of remaining matches (2nd–5th)
+            let listHtml = '';
+            for (let i = 1; i < topMatches.length; i++) {
+                const m = topMatches[i];
+                const label = qualityLabel(m.distance);
+                listHtml += `
+                    <div class="match-item">
+                        <span class="match-swatch" style="background-color: rgb(${m.r}, ${m.g}, ${m.b});"></span>
+                        <span class="match-code">${m.code} – ${m.name}</span>
+                        <span> | ΔE2000: ${m.distance.toFixed(2)}</span>
+                        <span class="match-label"> (${label})</span>
+                    </div>
+                `;
+            }
+            matchesList.innerHTML = listHtml;
 
             resultsBox.style.display = 'block';
         }
 
-        // --- 5. Colour distance using Lab + ΔE2000 ---
-        function findClosestFloss(r, g, b) {
+        // --- 5. Find top N closest matches using Lab + ΔE2000 ---
+        function findClosestFlosses(r, g, b, count) {
             const sampleLab = rgbToLab(r, g, b);
-            let best = null;
-            let bestDist = Infinity;
-
-            FLOSS_COLORS.forEach(fl => {
-                const dist = deltaE2000(sampleLab, fl.lab);
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    best = fl;
-                }
-            });
-
-            return { ...best, distance: bestDist };
+            const withDistances = FLOSS_COLORS.map(fl => ({
+                ...fl,
+                distance: deltaE2000(sampleLab, fl.lab)
+            }));
+            withDistances.sort((a, b) => a.distance - b.distance);
+            return withDistances.slice(0, Math.min(count, withDistances.length));
         }
 
-        // --- 6. RGB -> Lab conversion helpers ---
+        // --- 6. Map ΔE2000 to a simple quality label ---
+        function qualityLabel(dE) {
+            if (dE < 1)   return 'Perfect / indistinguishable';
+            if (dE < 2)   return 'Excellent match';
+            if (dE < 5)   return 'Very good match';
+            if (dE < 8)   return 'Good / usable match';
+            if (dE < 15)  return 'Approximate match';
+            return 'Rough / far off';
+        }
+
+        // --- 7. RGB -> Lab conversion helpers ---
 
         // Convert sRGB (0–255) to Lab (D65)
         function rgbToLab(r, g, b) {
@@ -257,9 +306,8 @@
                 : (t / (3 * Math.pow(delta, 2))) + (4 / 29);
         }
 
-        // --- 7. ΔE2000 implementation ---
+        // --- 8. ΔE2000 implementation ---
         function deltaE2000(lab1, lab2) {
-            // Implementation adapted from standard CIEDE2000 formula
             const L1 = lab1.L;
             const a1 = lab1.a;
             const b1 = lab1.b;
@@ -325,7 +373,8 @@
             const deltaTheta =
                 30 * Math.exp(-((HbarPrime - 275) / 25) * ((HbarPrime - 275) / 25));
             const R_C = 2 * Math.sqrt(Math.pow(CbarPrime, 7) / (Math.pow(CbarPrime, 7) + Math.pow(25, 7)));
-            const S_L = 1 + ((0.015 * (L1 + L2) / 2 - 50) * (0.015 * (L1 + L2) / 2 - 50)) / Math.sqrt(20 + ((0.015 * (L1 + L2) / 2 - 50) * (0.015 * (L1 + L2) / 2 - 50)));
+            const S_L = 1 + ((0.015 * (L1 + L2) / 2 - 50) * (0.015 * (L1 + L2) / 2 - 50)) /
+                        Math.sqrt(20 + ((0.015 * (L1 + L2) / 2 - 50) * (0.015 * (L1 + L2) / 2 - 50)));
             const S_C = 1 + 0.045 * CbarPrime;
             const S_H = 1 + 0.015 * CbarPrime * T;
             const R_T = -Math.sin(deg2rad(2 * deltaTheta)) * R_C;
@@ -354,7 +403,7 @@
             return (rad * 180) / Math.PI;
         }
 
-        // --- 8. Utility: RGB → Hex string ---
+        // --- 9. Utility: RGB → Hex string ---
         function rgbToHex(r, g, b) {
             return "#" + [r, g, b].map(function (x) {
                 const hex = x.toString(16);
@@ -362,6 +411,7 @@
             }).join("");
         }
     </script>
+
 
 
 </body>

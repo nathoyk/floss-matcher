@@ -223,13 +223,20 @@
                 font-size: 0.95rem;
             }
         }
+
+        .name-warning {
+            color: #dc2626; /* Tailwind red-600 */
+            font-weight: 600;
+            cursor: pointer;
+        }
+
     </style>
 
 </head>
 <body>
     <h1>Floss Matcher PoC</h1>
     <div id="appVersion" style="text-align:center; font-size:0.75rem; color:#777; margin-top:2px;">
-        v0.2.3
+        v0.2.4
     </div>
 
     <p>
@@ -315,12 +322,21 @@
         <div id="inventoryList" style="margin-top:8px; font-size:0.85rem;"></div>
     </section>
 
+    <div id="nameHintBox" 
+        style="display:none; margin-top:10px; padding:10px; 
+                border:1px solid #dc2626; border-radius:8px; 
+                background:#fee2e2; color:#7f1d1d; font-size:0.85rem;">
+        <strong>No match found for this code.</strong><br><br>
+        • This code does not exist in the DMC database, OR<br>
+        • The code is correct but not part of the floss set you loaded.<br><br>
+        You may enter the thread name manually if you know it.
+    </div>
 
     <!-- Hidden image element used for loading -->
     <img id="hiddenImage" alt="" style="display:none;">
 
     <script>
-        const APP_VERSION = "0.2.3";
+        const APP_VERSION = "0.2.4";
         document.getElementById("appVersion").textContent = "v" + APP_VERSION;
 
         // Global palette (filled after JSON loads, with Lab precomputed)
@@ -374,6 +390,7 @@
         const addInventoryBtn    = document.getElementById('addInventoryBtn');
         const inventoryStatus    = document.getElementById('inventoryStatus');
         const inventoryList      = document.getElementById('inventoryList');
+        const nameHintBox        = document.getElementById('nameHintBox');
 
         let currentBestMatch = null;
 
@@ -409,7 +426,7 @@
 
                 
         function autoFillInventoryName() {
-            // Only auto-fill if Name is empty or previously just "!"
+            // If user has already entered a custom name (not just '!'), don't overwrite it
             if (invNameInput.value && invNameInput.value !== '!') {
                 return;
             }
@@ -417,7 +434,7 @@
             const brandRaw = invBrandInput.value.trim();
             const brand = brandRaw || 'DMC';
 
-            // For now we only know DMC official names
+            // Only attempt name auto-fill for DMC brand
             if (brand.toUpperCase() !== 'DMC') {
                 return;
             }
@@ -430,12 +447,25 @@
             // Find matching DMC code in palette
             const match = FLOSS_COLORS.find(fl => String(fl.code) === code);
 
+            // Close any previous hints
+            nameHintBox.style.display = 'none';
+
             if (match && match.name) {
+                // Good match → fill name normally and clear any warning behaviour
+                invNameInput.classList.remove('name-warning');
+                invNameInput.onclick = null;              // IMPORTANT: clear old onclick
                 invNameInput.value = match.name;
-            } else {
-                // No match found → mark with "!"
-                invNameInput.value = '!';
+                return;
             }
+
+            // No match → show '!'. Make it red and clickable.
+            invNameInput.value = '!';
+            invNameInput.classList.add('name-warning');
+
+            // Clicking the red '!' opens the hint
+            invNameInput.onclick = () => {
+                nameHintBox.style.display = 'block';
+            };
         }
 
             // --- 2. White reference button ---
@@ -646,6 +676,15 @@
         // If you change brand, re-run the lookup as well
         invBrandInput.addEventListener('blur', autoFillInventoryName);
         invBrandInput.addEventListener('change', autoFillInventoryName);
+
+        // If user edits Name manually, remove warning style & onclick
+        invNameInput.addEventListener('input', () => {
+            if (invNameInput.value !== '!') {
+                invNameInput.classList.remove('name-warning');
+                invNameInput.onclick = null;
+                nameHintBox.style.display = 'none';
+            }
+        });
 
         // Delete mapping via event delegation
         mappingsList.addEventListener('click', (e) => {

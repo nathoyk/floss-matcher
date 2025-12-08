@@ -115,6 +115,25 @@
             outline: none;
         }
 
+        .primaryButton {
+            width: 100%;
+            margin-top: 10px;
+            background: var(--accent);
+            color: #ffffff;
+            border-color: var(--accent);
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .primaryButton:hover {
+            background: #1d4ed8;
+            border-color: #1d4ed8;
+        }
+
+        .primaryButton:active {
+            background: #1e40af;
+        }
+
         button {
             cursor: pointer;
             transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
@@ -196,7 +215,7 @@
 <body>
     <h1>Floss Matcher PoC</h1>
     <div id="appVersion" style="text-align:center; font-size:0.75rem; color:#777; margin-top:2px;">
-        v1.0.03
+        v0.1.4
     </div>
 
     <p>
@@ -207,7 +226,11 @@
     </p>
 
     <!-- On iPhone, this will let you either pick from Photos or use the camera -->
-    <input type="file" id="fileInput" accept="image/*" capture="environment">
+    <input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none;">
+
+    <button id="fileButton" type="button" class="primaryButton">
+        📷 Take or choose photo
+    </button>
 
     <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
         <button id="setWhiteBtn">Tap image to set white reference</button>
@@ -250,7 +273,7 @@
     <img id="hiddenImage" alt="" style="display:none;">
 
     <script>
-        const APP_VERSION = "1.0.03";
+        const APP_VERSION = "0.1.4";
         document.getElementById("appVersion").textContent = "v" + APP_VERSION;
 
         // Global palette (filled after JSON loads, with Lab precomputed)
@@ -277,10 +300,18 @@
 
         const sampleOverlay = document.getElementById('sampleOverlay');
 
-        const SAMPLE_RADIUS = 10; // in canvas pixels (≈ 7x7 area)
+        const SAMPLE_RADIUS      = 3; // for normal colour sampling
+        const WHITE_SAMPLE_RADIUS = 5; // a bit larger area for white reference
+
         let previewActive = false;
         let previewCanvasX = 0;
         let previewCanvasY = 0;
+
+        const fileButton = document.getElementById('fileButton');
+
+        fileButton.addEventListener('click', () => {
+            fileInput.click();
+        });        
 
         // --- 1. Load DMC palette from JSON and precompute Lab values ---
         fetch('dmc_palette.json?v=' + APP_VERSION)
@@ -408,9 +439,15 @@
         }
 
         function handleSampleAtCurrentPreview() {
-            const { r: rawR, g: rawG, b: rawB } = sampleAverageRGB(previewCanvasX, previewCanvasY, SAMPLE_RADIUS);
+            const radius = calibrationMode ? WHITE_SAMPLE_RADIUS : SAMPLE_RADIUS;
 
-            // If we're in calibration mode, treat this tap as white reference
+            const { r: rawR, g: rawG, b: rawB } = sampleAverageRGB(
+                previewCanvasX,
+                previewCanvasY,
+                radius
+            );
+
+            // If we're in calibration mode, treat this as white reference
             if (calibrationMode) {
                 calibrationMode = false;
                 setWhiteReference(rawR, rawG, rawB);

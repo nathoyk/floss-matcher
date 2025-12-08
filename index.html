@@ -230,113 +230,144 @@
             cursor: pointer;
         }
 
+        .tabButton {
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: #ffffff;
+            font-size: 0.85rem;
+        }
+
+        .tab-active {
+            background: var(--accent);
+            color: #ffffff;
+            border-color: var(--accent);
+        }
+
     </style>
 
 </head>
 <body>
     <h1>Floss Matcher PoC</h1>
     <div id="appVersion" style="text-align:center; font-size:0.75rem; color:#777; margin-top:2px;">
-        v0.2.4
+        v0.3.1
     </div>
 
-    <p>
-        1. Choose or take a photo of your threads.<br>
-        2. (Optional) Select a white area for colour balance correction.<br>
-        3. Tap on the image to sample a colour.<br>
-        4. The app will show the nearest match of DMC threads.
-    </p>
-
-    <!-- On iPhone, this will let you either pick from Photos or use the camera -->
-    <input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none;">
-
-    <button id="fileButton" type="button" class="primaryButton">
-        📷 Take or choose photo
-    </button>
-
-    <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
-        <button id="setWhiteBtn">Tap image to set white reference</button>
-        <label>
-            Matches to show:
-            <select id="matchCount">
-                <option value="3">3</option>
-                <option value="5" selected>5</option>
-            </select>
-        </label>
+    <div style="margin-top:8px; display:flex; gap:8px; justify-content:center; font-size:0.85rem;">
+        <button id="tabMatcher"   type="button" class="tabButton tab-active">Matcher</button>
+        <button id="tabReference" type="button" class="tabButton">DMC Reference</button>
     </div>
 
-    <div id="wbStatus" class="row" style="margin-top:6px; font-size:0.85rem; opacity:0.8;">
-        No white reference set. For better accuracy, include a white/neutral card in your photo and set it as reference.
-    </div>
+    <div id="matcherPage">
+        <p>
+            1. Choose or take a photo of your threads.<br>
+            2. (Optional) Select a white area for colour balance correction.<br>
+            3. Tap on the image to sample a colour.<br>
+            4. The app will show the nearest match of DMC threads.
+        </p>
 
-    <div id="canvasWrapper">
-        <canvas id="imageCanvas"></canvas>
-        <div id="sampleOverlay"></div>
-    </div>
+        <!-- On iPhone, this will let you either pick from Photos or use the camera -->
+        <input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none;">
 
-    <div id="results" style="display:none;">
-        <div class="row">
-            <strong>Sampled colour:</strong>
-        </div>
-        <div class="row">
-            <div id="sampleSwatch" class="color-swatch"></div>
-            <span id="rgbText"></span>
+        <button id="fileButton" type="button" class="primaryButton">
+            📷 Take or choose photo
+        </button>
+
+        <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+            <button id="setWhiteBtn">Tap image to set white reference</button>
+            <label>
+                Matches to show:
+                <select id="matchCount">
+                    <option value="3">3</option>
+                    <option value="5" selected>5</option>
+                </select>
+            </label>
         </div>
 
-        <div class="row" style="margin-top:8px;">
-            <strong>Closest floss matches:</strong>
+        <div id="wbStatus" class="row" style="margin-top:6px; font-size:0.85rem; opacity:0.8;">
+            No white reference set. For better accuracy, include a white/neutral card in your photo and set it as reference.
         </div>
-        <div class="row" id="bestMatch"></div>
-        <div class="row" id="matchesList"></div>
-    </div>
 
-    <hr style="margin:16px 0; border:none; border-top:1px solid #ddd;">
+        <div id="canvasWrapper">
+            <canvas id="imageCanvas"></canvas>
+            <div id="sampleOverlay"></div>
+        </div>
 
-    <section id="packSection">
-        <h2 style="font-size:1rem; margin-bottom:4px;">Saved pack mappings</h2>
-        <div class="row" id="packSaveRow">
-            <div style="font-size:0.85rem; margin-bottom:4px;">
-                Save the current best match as one of your generic pack colours.
+        <div id="results" style="display:none;">
+            <div class="row">
+                <strong>Sampled colour:</strong>
             </div>
-            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
-                <input id="packNameInput" type="text" placeholder="Pack name (e.g. Pack A)" style="flex:1 1 130px; min-width:0; padding:6px 8px; font-size:0.85rem;">
-                <input id="packSlotInput" type="text" placeholder="Slot (e.g. 1, A1)" style="flex:1 1 80px; min-width:0; padding:6px 8px; font-size:0.85rem;">
+            <div class="row">
+                <div id="sampleSwatch" class="color-swatch"></div>
+                <span id="rgbText"></span>
             </div>
-            <button id="saveMappingBtn" type="button" style="font-size:0.85rem;">Save current best match</button>
-            <div id="saveMappingStatus" style="margin-top:4px; font-size:0.8rem; color:#666;"></div>
-        </div>
-        <div id="mappingsList" style="margin-top:8px; font-size:0.85rem;"></div>
-    </section>
 
-    <section id="inventorySection" style="margin-top:18px;">
-        <h2 style="font-size:1rem; margin-bottom:4px;">Inventory</h2>
-        <div class="row">
-            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
-                <input id="invBrandInput" type="text" placeholder="Brand (e.g. DMC)" style="flex:1 1 90px; min-width:0; padding:6px 8px; font-size:0.85rem;">
-                <input id="invCodeInput" type="text" placeholder="Code (e.g. 310)" style="flex:1 1 80px; min-width:0; padding:6px 8px; font-size:0.85rem;">
-                <input id="invNameInput" type="text" placeholder="Name (optional)" style="flex:1 1 130px; min-width:0; padding:6px 8px; font-size:0.85rem;">
-                <input id="invQtyInput" type="number" min="0" placeholder="Qty" style="flex:0 0 70px; padding:6px 8px; font-size:0.85rem;">
+            <div class="row" style="margin-top:8px;">
+                <strong>Closest floss matches:</strong>
             </div>
-            <button id="addInventoryBtn" type="button" style="font-size:0.85rem;">Add to inventory</button>
-            <div id="inventoryStatus" style="margin-top:4px; font-size:0.8rem; color:#666;"></div>
+            <div class="row" id="bestMatch"></div>
+            <div class="row" id="matchesList"></div>
         </div>
-        <div id="inventoryList" style="margin-top:8px; font-size:0.85rem;"></div>
-    </section>
 
-    <div id="nameHintBox" 
-        style="display:none; margin-top:10px; padding:10px; 
-                border:1px solid #dc2626; border-radius:8px; 
-                background:#fee2e2; color:#7f1d1d; font-size:0.85rem;">
-        <strong>No match found for this code.</strong><br><br>
-        • This code does not exist in the DMC database, OR<br>
-        • The code is correct but not part of the floss set you loaded.<br><br>
-        You may enter the thread name manually if you know it.
+        <hr style="margin:16px 0; border:none; border-top:1px solid #ddd;">
+
+        <section id="packSection">
+            <h2 style="font-size:1rem; margin-bottom:4px;">Saved pack mappings</h2>
+            <div class="row" id="packSaveRow">
+                <div style="font-size:0.85rem; margin-bottom:4px;">
+                    Save the current best match as one of your generic pack colours.
+                </div>
+                <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
+                    <input id="packNameInput" type="text" placeholder="Pack name (e.g. Pack A)" style="flex:1 1 130px; min-width:0; padding:6px 8px; font-size:0.85rem;">
+                    <input id="packSlotInput" type="text" placeholder="Slot (e.g. 1, A1)" style="flex:1 1 80px; min-width:0; padding:6px 8px; font-size:0.85rem;">
+                </div>
+                <button id="saveMappingBtn" type="button" style="font-size:0.85rem;">Save current best match</button>
+                <div id="saveMappingStatus" style="margin-top:4px; font-size:0.8rem; color:#666;"></div>
+            </div>
+            <div id="mappingsList" style="margin-top:8px; font-size:0.85rem;"></div>
+        </section>
+
+        <section id="inventorySection" style="margin-top:18px;">
+            <h2 style="font-size:1rem; margin-bottom:4px;">Inventory</h2>
+            <div class="row">
+                <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
+                    <input id="invBrandInput" type="text" placeholder="Brand (e.g. DMC)" style="flex:1 1 90px; min-width:0; padding:6px 8px; font-size:0.85rem;">
+                    <input id="invCodeInput" type="text" placeholder="Code (e.g. 310)" style="flex:1 1 80px; min-width:0; padding:6px 8px; font-size:0.85rem;">
+                    <input id="invNameInput" type="text" placeholder="Name (optional)" style="flex:1 1 130px; min-width:0; padding:6px 8px; font-size:0.85rem;">
+                    <input id="invQtyInput" type="number" min="0" placeholder="Qty" style="flex:0 0 70px; padding:6px 8px; font-size:0.85rem;">
+                </div>
+                <button id="addInventoryBtn" type="button" style="font-size:0.85rem;">Add to inventory</button>
+                <div id="inventoryStatus" style="margin-top:4px; font-size:0.8rem; color:#666;"></div>
+            </div>
+            <div id="inventoryList" style="margin-top:8px; font-size:0.85rem;"></div>
+        </section>
+
+        <div id="nameHintBox" 
+            style="display:none; margin-top:10px; padding:10px; 
+                    border:1px solid #dc2626; border-radius:8px; 
+                    background:#fee2e2; color:#7f1d1d; font-size:0.85rem;">
+            <strong>No match found for this code.</strong><br><br>
+            • This code does not exist in the DMC database, OR<br>
+            • The code is correct but not part of the floss set you loaded.<br><br>
+            You may enter the thread name manually if you know it.
+        </div>
+    </div> <!-- end matcherPage -->
+
+    <div id="referencePage" style="display:none; margin-top:12px;">
+        <div id="dmcRefStatus" style="font-size:0.8rem; color:#666; margin-bottom:6px;">
+            Loading DMC palette...
+        </div>
+        <div id="dmcRefList"
+            style="max-height:60vh; overflow-y:auto; border-radius:10px;
+                    border:1px solid var(--border); background:#ffffff; padding:8px;">
+        </div>
     </div>
 
     <!-- Hidden image element used for loading -->
     <img id="hiddenImage" alt="" style="display:none;">
 
     <script>
-        const APP_VERSION = "0.2.4";
+        const APP_VERSION = "0.3.1";
         document.getElementById("appVersion").textContent = "v" + APP_VERSION;
 
         // Global palette (filled after JSON loads, with Lab precomputed)
@@ -390,7 +421,6 @@
         const addInventoryBtn    = document.getElementById('addInventoryBtn');
         const inventoryStatus    = document.getElementById('inventoryStatus');
         const inventoryList      = document.getElementById('inventoryList');
-        const nameHintBox        = document.getElementById('nameHintBox');
 
         let currentBestMatch = null;
 
@@ -403,6 +433,35 @@
         loadStateFromStorage();
         renderMappings();
         renderInventory();
+
+        // Tabs & pages
+        const tabMatcher    = document.getElementById('tabMatcher');
+        const tabReference  = document.getElementById('tabReference');
+        const matcherPage   = document.getElementById('matcherPage');
+        const referencePage = document.getElementById('referencePage');
+        const dmcRefStatus  = document.getElementById('dmcRefStatus');
+        const dmcRefList    = document.getElementById('dmcRefList');
+        const nameHintBox        = document.getElementById('nameHintBox');
+
+        // ---- Tab Switching Helper (PUT THIS HERE) ----
+        function setActiveTab(name) {
+            if (name === 'matcher') {
+                matcherPage.style.display   = 'block';
+                referencePage.style.display = 'none';
+                tabMatcher.classList.add('tab-active');
+                tabReference.classList.remove('tab-active');
+            } else if (name === 'reference') {
+                matcherPage.style.display   = 'none';
+                referencePage.style.display = 'block';
+                tabMatcher.classList.remove('tab-active');
+                tabReference.classList.add('tab-active');
+                renderDmcReference(); // ensures reference lists when opened
+            }
+        }
+
+        // Tab button listeners (also here)
+        tabMatcher.addEventListener('click', () => setActiveTab('matcher'));
+        tabReference.addEventListener('click', () => setActiveTab('reference'));
 
         // --- 1. Load DMC palette from JSON and precompute Lab values ---
         fetch('dmc_palette.json?v=' + APP_VERSION)
@@ -418,6 +477,8 @@
                     lab: rgbToLab(c.r, c.g, c.b)
                 }));
                 console.log('Loaded DMC colours:', FLOSS_COLORS.length);
+                // If user has opened the reference tab, render it
+                renderDmcReference();
             })
             .catch(err => {
                 console.error(err);
@@ -585,6 +646,33 @@
             });
 
             inventoryList.innerHTML = html;
+        }
+
+        function renderDmcReference() {
+            if (!FLOSS_COLORS.length) {
+                dmcRefStatus.textContent = 'Palette not loaded yet. Please wait a moment or reload.';
+                dmcRefList.innerHTML = '';
+                return;
+            }
+
+            dmcRefStatus.textContent = `Total colours: ${FLOSS_COLORS.length}`;
+
+            const sorted = [...FLOSS_COLORS].sort((a, b) =>
+                String(a.code).localeCompare(String(b.code))
+            );
+
+            let html = '';
+            sorted.forEach(c => {
+                html += `
+                    <div style="display:flex; align-items:center; gap:8px; padding:4px 2px; border-bottom:1px solid #eee;">
+                        <span style="width:18px; height:18px; border-radius:4px; border:1px solid #ccc; background: rgb(${c.r}, ${c.g}, ${c.b});"></span>
+                        <span style="font-size:0.85rem; min-width:60px;"><strong>${c.code}</strong></span>
+                        <span style="font-size:0.85rem; flex:1 1 auto;">${c.name || ''}</span>
+                    </div>
+                `;
+            });
+
+            dmcRefList.innerHTML = html;
         }
 
         saveMappingBtn.addEventListener('click', () => {
@@ -978,7 +1066,6 @@
 
             resultsBox.style.display = 'block';
         }
-
 
         // --- 7. Find top N closest matches using Lab + ΔE2000 ---
         function findClosestFlosses(sampleLab, count) {

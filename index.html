@@ -6,7 +6,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Floss Matcher PoC</title>
+    <title>Floss Matcher</title>
     
     <style>
         :root {
@@ -154,6 +154,20 @@
             flex: 1 1 100%;
         }
 
+        .iconButton {
+            border: none;
+            background: transparent;
+            padding: 0 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            color: #888;
+        }
+
+        .iconButton:hover {
+            color: #dc2626;
+            transform: translateY(1px);
+        }
+
         /* If you want the inline controls div to look nicer */
         /* (You already have inline styles; this just complements them) */
         div[style*="flex; flex-wrap"] {
@@ -215,7 +229,7 @@
 <body>
     <h1>Floss Matcher PoC</h1>
     <div id="appVersion" style="text-align:center; font-size:0.75rem; color:#777; margin-top:2px;">
-        v0.2.1
+        v0.2.3
     </div>
 
     <p>
@@ -287,10 +301,11 @@
     </section>
 
     <section id="inventorySection" style="margin-top:18px;">
-        <h2 style="font-size:1rem; margin-bottom:4px;">My DMC inventory</h2>
+        <h2 style="font-size:1rem; margin-bottom:4px;">Inventory</h2>
         <div class="row">
             <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
-                <input id="invCodeInput" type="text" placeholder="DMC code (e.g. 310)" style="flex:1 1 80px; min-width:0; padding:6px 8px; font-size:0.85rem;">
+                <input id="invBrandInput" type="text" placeholder="Brand (e.g. DMC)" style="flex:1 1 90px; min-width:0; padding:6px 8px; font-size:0.85rem;">
+                <input id="invCodeInput" type="text" placeholder="Code (e.g. 310)" style="flex:1 1 80px; min-width:0; padding:6px 8px; font-size:0.85rem;">
                 <input id="invNameInput" type="text" placeholder="Name (optional)" style="flex:1 1 130px; min-width:0; padding:6px 8px; font-size:0.85rem;">
                 <input id="invQtyInput" type="number" min="0" placeholder="Qty" style="flex:0 0 70px; padding:6px 8px; font-size:0.85rem;">
             </div>
@@ -305,7 +320,7 @@
     <img id="hiddenImage" alt="" style="display:none;">
 
     <script>
-        const APP_VERSION = "0.2.1";
+        const APP_VERSION = "0.2.3";
         document.getElementById("appVersion").textContent = "v" + APP_VERSION;
 
         // Global palette (filled after JSON loads, with Lab precomputed)
@@ -352,6 +367,7 @@
         const saveMappingStatus  = document.getElementById('saveMappingStatus');
         const mappingsList       = document.getElementById('mappingsList');
 
+        const invBrandInput      = document.getElementById('invBrandInput');
         const invCodeInput       = document.getElementById('invCodeInput');
         const invNameInput       = document.getElementById('invNameInput');
         const invQtyInput        = document.getElementById('invQtyInput');
@@ -391,7 +407,38 @@
                 alert('Could not load DMC palette. Check that dmc_palette.json is in the same folder as index.html.');
             });
 
-        // --- 2. White reference button ---
+                
+        function autoFillInventoryName() {
+            // Only auto-fill if Name is empty or previously just "!"
+            if (invNameInput.value && invNameInput.value !== '!') {
+                return;
+            }
+
+            const brandRaw = invBrandInput.value.trim();
+            const brand = brandRaw || 'DMC';
+
+            // For now we only know DMC official names
+            if (brand.toUpperCase() !== 'DMC') {
+                return;
+            }
+
+            const code = invCodeInput.value.trim();
+            if (!code || !FLOSS_COLORS.length) {
+                return;
+            }
+
+            // Find matching DMC code in palette
+            const match = FLOSS_COLORS.find(fl => String(fl.code) === code);
+
+            if (match && match.name) {
+                invNameInput.value = match.name;
+            } else {
+                // No match found → mark with "!"
+                invNameInput.value = '!';
+            }
+        }
+
+            // --- 2. White reference button ---
         setWhiteBtn.addEventListener('click', () => {
             if (!canvas.width || !canvas.height) {
                 alert('Please load a photo first, then tap the white/neutral card in the image.');
@@ -456,7 +503,11 @@
                 html += `<div style="margin-top:6px; margin-bottom:4px;"><strong>${packName}</strong></div>`;
                 byPack[packName].sort((a, b) => (a.slot || '').localeCompare(b.slot || ''));
                 byPack[packName].forEach(m => {
-                    const owned = dmcInventory.some(item => String(item.code) === String(m.code));
+                    const owned = dmcInventory.some(
+                        item =>
+                            String(item.code) === String(m.code) &&
+                            (item.brand || 'DMC') === (m.brand || 'DMC')
+                    );
                     const ownedTag = owned
                         ? `<span style="color:#16a34a; font-size:0.8rem; margin-left:6px;">(in inventory)</span>`
                         : '';
@@ -464,8 +515,11 @@
                         <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
                             <span style="font-size:0.8rem; min-width:40px;">${m.slot || '-'}</span>
                             <span style="display:inline-block; width:16px; height:16px; border-radius:3px; border:1px solid #ccc; background: rgb(${m.r}, ${m.g}, ${m.b});"></span>
-                            <span style="font-size:0.85rem;">DMC ${m.code} – ${m.name || ''}</span>
-                            ${ownedTag}
+                            <span style="font-size:0.85rem; flex:1 1 auto;">
+                                ${m.brand || 'DMC'} ${m.code} – ${m.name || ''}
+                                ${ownedTag}
+                            </span>
+                            <button type="button" class="iconButton delete-mapping" data-id="${m.id}" title="Delete mapping">🗑</button>
                         </div>
                     `;
                 });
@@ -489,10 +543,13 @@
                 html += `
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
                         <span>
-                            <strong>${item.code}</strong>
+                            <strong>${item.brand || 'DMC'} ${item.code}</strong>
                             ${item.name ? ` – ${item.name}` : ''}
                         </span>
-                        <span style="font-size:0.8rem; color:#555;">Qty: ${item.qty ?? '-'}</span>
+                        <span style="display:flex; align-items:center; gap:6px;">
+                            <span style="font-size:0.8rem; color:#555;">Qty: ${item.qty ?? '-'}</span>
+                            <button type="button" class="iconButton delete-inventory" data-id="${item.id}" title="Delete from inventory">🗑</button>
+                        </span>
                     </div>
                 `;
             });
@@ -520,6 +577,7 @@
                 id: Date.now(),
                 packName,
                 slot,
+                brand: 'DMC', // for now all matches are DMC
                 code: currentBestMatch.code,
                 name: currentBestMatch.name,
                 r: currentBestMatch.r,
@@ -537,6 +595,9 @@
         addInventoryBtn.addEventListener('click', () => {
             inventoryStatus.textContent = '';
 
+            const brandRaw = invBrandInput.value.trim();
+            const brand = brandRaw || 'DMC';
+
             const code = invCodeInput.value.trim();
             const name = invNameInput.value.trim();
             const qtyRaw = invQtyInput.value.trim();
@@ -549,19 +610,24 @@
             const qty = qtyRaw === '' ? null : Number(qtyRaw);
 
             // If code already exists, update it
-            const existing = dmcInventory.find(item => String(item.code) === String(code));
+            const existing = dmcInventory.find(
+                item => String(item.code) === String(code) && (item.brand || 'DMC') === brand
+            );
+
             if (existing) {
-                existing.name = name || existing.name;
+                existing.brand = brand;
+                existing.name  = name || existing.name;
                 if (!Number.isNaN(qty) && qty !== null) existing.qty = qty;
-                inventoryStatus.textContent = `Updated inventory for DMC ${code}.`;
+                inventoryStatus.textContent = `Updated inventory for ${brand} ${code}.`;
             } else {
                 dmcInventory.push({
                     id: Date.now(),
+                    brand,
                     code,
                     name: name || '',
                     qty: Number.isNaN(qty) ? null : qty
                 });
-                inventoryStatus.textContent = `Added DMC ${code} to inventory.`;
+                inventoryStatus.textContent = `Added ${brand} ${code} to inventory.`;
             }
 
             saveInventoryToStorage();
@@ -571,6 +637,38 @@
             // invCodeInput.value = '';
             // invNameInput.value = '';
             // invQtyInput.value = '';
+        });
+
+        // Try to auto-fill Name when brand/code changes
+        invCodeInput.addEventListener('blur', autoFillInventoryName);
+        invCodeInput.addEventListener('change', autoFillInventoryName);
+
+        // If you change brand, re-run the lookup as well
+        invBrandInput.addEventListener('blur', autoFillInventoryName);
+        invBrandInput.addEventListener('change', autoFillInventoryName);
+
+        // Delete mapping via event delegation
+        mappingsList.addEventListener('click', (e) => {
+            if (!e.target.classList.contains('delete-mapping')) return;
+
+            const id = Number(e.target.dataset.id);
+            if (!id) return;
+
+            savedMappings = savedMappings.filter(m => m.id !== id);
+            saveMappingsToStorage();
+            renderMappings();
+        });
+
+        // Delete inventory item via event delegation
+        inventoryList.addEventListener('click', (e) => {
+            if (!e.target.classList.contains('delete-inventory')) return;
+
+            const id = Number(e.target.dataset.id);
+            if (!id) return;
+
+            dmcInventory = dmcInventory.filter(item => item.id !== id);
+            saveInventoryToStorage();
+            renderInventory();
         });
 
         // --- 3. Handle file selection (photo or camera) ---
@@ -794,7 +892,11 @@
             currentBestMatch = best;  // <-- remember for "Save mapping"
 
             const bestLabel = qualityLabel(best.distance);
-            const ownedBest = dmcInventory.some(item => String(item.code) === String(best.code));
+            const ownedBest = dmcInventory.some(
+                item =>
+                    String(item.code) === String(best.code) &&
+                    (item.brand || 'DMC') === (best.brand || 'DMC')
+            );
             const ownedBadge = ownedBest
                 ? `<span style="margin-left:6px; font-size:0.8rem; color:#16a34a;">(in your inventory)</span>`
                 : '';
@@ -814,7 +916,11 @@
             for (let i = 1; i < topMatches.length; i++) {
                 const m = topMatches[i];
                 const label = qualityLabel(m.distance);
-                const owned = dmcInventory.some(item => String(item.code) === String(m.code));
+                const owned = dmcInventory.some(
+                    item =>
+                        String(item.code) === String(m.code) &&
+                        (item.brand || 'DMC') === (m.brand || 'DMC')
+                );
                 const ownedTag = owned
                     ? `<span style="margin-left:4px; font-size:0.75rem; color:#16a34a;">(owned)</span>`
                     : '';

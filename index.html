@@ -215,7 +215,7 @@
 <body>
     <h1>Floss Matcher PoC</h1>
     <div id="appVersion" style="text-align:center; font-size:0.75rem; color:#777; margin-top:2px;">
-        v0.1.4
+        v0.2.1
     </div>
 
     <p>
@@ -268,12 +268,44 @@
         <div class="row" id="matchesList"></div>
     </div>
 
+    <hr style="margin:16px 0; border:none; border-top:1px solid #ddd;">
+
+    <section id="packSection">
+        <h2 style="font-size:1rem; margin-bottom:4px;">Saved pack mappings</h2>
+        <div class="row" id="packSaveRow">
+            <div style="font-size:0.85rem; margin-bottom:4px;">
+                Save the current best match as one of your generic pack colours.
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
+                <input id="packNameInput" type="text" placeholder="Pack name (e.g. Pack A)" style="flex:1 1 130px; min-width:0; padding:6px 8px; font-size:0.85rem;">
+                <input id="packSlotInput" type="text" placeholder="Slot (e.g. 1, A1)" style="flex:1 1 80px; min-width:0; padding:6px 8px; font-size:0.85rem;">
+            </div>
+            <button id="saveMappingBtn" type="button" style="font-size:0.85rem;">Save current best match</button>
+            <div id="saveMappingStatus" style="margin-top:4px; font-size:0.8rem; color:#666;"></div>
+        </div>
+        <div id="mappingsList" style="margin-top:8px; font-size:0.85rem;"></div>
+    </section>
+
+    <section id="inventorySection" style="margin-top:18px;">
+        <h2 style="font-size:1rem; margin-bottom:4px;">My DMC inventory</h2>
+        <div class="row">
+            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
+                <input id="invCodeInput" type="text" placeholder="DMC code (e.g. 310)" style="flex:1 1 80px; min-width:0; padding:6px 8px; font-size:0.85rem;">
+                <input id="invNameInput" type="text" placeholder="Name (optional)" style="flex:1 1 130px; min-width:0; padding:6px 8px; font-size:0.85rem;">
+                <input id="invQtyInput" type="number" min="0" placeholder="Qty" style="flex:0 0 70px; padding:6px 8px; font-size:0.85rem;">
+            </div>
+            <button id="addInventoryBtn" type="button" style="font-size:0.85rem;">Add to inventory</button>
+            <div id="inventoryStatus" style="margin-top:4px; font-size:0.8rem; color:#666;"></div>
+        </div>
+        <div id="inventoryList" style="margin-top:8px; font-size:0.85rem;"></div>
+    </section>
+
 
     <!-- Hidden image element used for loading -->
     <img id="hiddenImage" alt="" style="display:none;">
 
     <script>
-        const APP_VERSION = "0.1.4";
+        const APP_VERSION = "0.2.1";
         document.getElementById("appVersion").textContent = "v" + APP_VERSION;
 
         // Global palette (filled after JSON loads, with Lab precomputed)
@@ -300,8 +332,8 @@
 
         const sampleOverlay = document.getElementById('sampleOverlay');
 
-        const SAMPLE_RADIUS      = 3; // for normal colour sampling
-        const WHITE_SAMPLE_RADIUS = 5; // a bit larger area for white reference
+        const SAMPLE_RADIUS      = 10; // for normal colour sampling
+        const WHITE_SAMPLE_RADIUS = 15; // a bit larger area for white reference
 
         let previewActive = false;
         let previewCanvasX = 0;
@@ -312,6 +344,32 @@
         fileButton.addEventListener('click', () => {
             fileInput.click();
         });        
+
+        // Pack mapping & inventory UI elements
+        const packNameInput      = document.getElementById('packNameInput');
+        const packSlotInput      = document.getElementById('packSlotInput');
+        const saveMappingBtn     = document.getElementById('saveMappingBtn');
+        const saveMappingStatus  = document.getElementById('saveMappingStatus');
+        const mappingsList       = document.getElementById('mappingsList');
+
+        const invCodeInput       = document.getElementById('invCodeInput');
+        const invNameInput       = document.getElementById('invNameInput');
+        const invQtyInput        = document.getElementById('invQtyInput');
+        const addInventoryBtn    = document.getElementById('addInventoryBtn');
+        const inventoryStatus    = document.getElementById('inventoryStatus');
+        const inventoryList      = document.getElementById('inventoryList');
+
+        let currentBestMatch = null;
+
+        let savedMappings = [];
+        let dmcInventory  = [];
+
+        const STORAGE_KEY_MAPPINGS  = 'flossMappingsV1';
+        const STORAGE_KEY_INVENTORY = 'flossInventoryV1';
+
+        loadStateFromStorage();
+        renderMappings();
+        renderInventory();
 
         // --- 1. Load DMC palette from JSON and precompute Lab values ---
         fetch('dmc_palette.json?v=' + APP_VERSION)
@@ -341,6 +399,178 @@
             }
             calibrationMode = true;
             wbStatus.textContent = 'Calibration mode: tap a white/neutral card area in the image to set white reference.';
+        });
+
+        function loadStateFromStorage() {
+            try {
+                const rawMappings = localStorage.getItem(STORAGE_KEY_MAPPINGS);
+                if (rawMappings) {
+                    savedMappings = JSON.parse(rawMappings);
+                }
+            } catch (e) {
+                console.warn('Could not load mappings from storage', e);
+            }
+
+            try {
+                const rawInv = localStorage.getItem(STORAGE_KEY_INVENTORY);
+                if (rawInv) {
+                    dmcInventory = JSON.parse(rawInv);
+                }
+            } catch (e) {
+                console.warn('Could not load inventory from storage', e);
+            }
+        }
+
+        function saveMappingsToStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEY_MAPPINGS, JSON.stringify(savedMappings));
+            } catch (e) {
+                console.warn('Could not save mappings', e);
+            }
+        }
+
+        function saveInventoryToStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(dmcInventory));
+            } catch (e) {
+                console.warn('Could not save inventory', e);
+            }
+        }
+
+        function renderMappings() {
+            if (!savedMappings.length) {
+                mappingsList.textContent = 'No pack mappings saved yet.';
+                return;
+            }
+
+            // Group by pack name
+            const byPack = {};
+            for (const m of savedMappings) {
+                const key = m.packName || '(Unnamed pack)';
+                if (!byPack[key]) byPack[key] = [];
+                byPack[key].push(m);
+            }
+
+            let html = '';
+            Object.keys(byPack).sort().forEach(packName => {
+                html += `<div style="margin-top:6px; margin-bottom:4px;"><strong>${packName}</strong></div>`;
+                byPack[packName].sort((a, b) => (a.slot || '').localeCompare(b.slot || ''));
+                byPack[packName].forEach(m => {
+                    const owned = dmcInventory.some(item => String(item.code) === String(m.code));
+                    const ownedTag = owned
+                        ? `<span style="color:#16a34a; font-size:0.8rem; margin-left:6px;">(in inventory)</span>`
+                        : '';
+                    html += `
+                        <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
+                            <span style="font-size:0.8rem; min-width:40px;">${m.slot || '-'}</span>
+                            <span style="display:inline-block; width:16px; height:16px; border-radius:3px; border:1px solid #ccc; background: rgb(${m.r}, ${m.g}, ${m.b});"></span>
+                            <span style="font-size:0.85rem;">DMC ${m.code} – ${m.name || ''}</span>
+                            ${ownedTag}
+                        </div>
+                    `;
+                });
+            });
+
+            mappingsList.innerHTML = html;
+        }
+
+        function renderInventory() {
+            if (!dmcInventory.length) {
+                inventoryList.textContent = 'No threads added yet.';
+                return;
+            }
+
+            const sorted = [...dmcInventory].sort((a, b) =>
+                String(a.code).localeCompare(String(b.code))
+            );
+
+            let html = '';
+            sorted.forEach(item => {
+                html += `
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+                        <span>
+                            <strong>${item.code}</strong>
+                            ${item.name ? ` – ${item.name}` : ''}
+                        </span>
+                        <span style="font-size:0.8rem; color:#555;">Qty: ${item.qty ?? '-'}</span>
+                    </div>
+                `;
+            });
+
+            inventoryList.innerHTML = html;
+        }
+
+        saveMappingBtn.addEventListener('click', () => {
+            saveMappingStatus.textContent = '';
+
+            if (!currentBestMatch) {
+                saveMappingStatus.textContent = 'No best match to save yet – sample a colour first.';
+                return;
+            }
+
+            const packName = packNameInput.value.trim();
+            const slot     = packSlotInput.value.trim();
+
+            if (!packName || !slot) {
+                saveMappingStatus.textContent = 'Please enter both pack name and slot.';
+                return;
+            }
+
+            const mapping = {
+                id: Date.now(),
+                packName,
+                slot,
+                code: currentBestMatch.code,
+                name: currentBestMatch.name,
+                r: currentBestMatch.r,
+                g: currentBestMatch.g,
+                b: currentBestMatch.b
+            };
+
+            savedMappings.push(mapping);
+            saveMappingsToStorage();
+            renderMappings();
+
+            saveMappingStatus.textContent = `Saved: ${packName} / ${slot} → DMC ${mapping.code}`;
+        });
+
+        addInventoryBtn.addEventListener('click', () => {
+            inventoryStatus.textContent = '';
+
+            const code = invCodeInput.value.trim();
+            const name = invNameInput.value.trim();
+            const qtyRaw = invQtyInput.value.trim();
+
+            if (!code) {
+                inventoryStatus.textContent = 'Please enter a DMC code.';
+                return;
+            }
+
+            const qty = qtyRaw === '' ? null : Number(qtyRaw);
+
+            // If code already exists, update it
+            const existing = dmcInventory.find(item => String(item.code) === String(code));
+            if (existing) {
+                existing.name = name || existing.name;
+                if (!Number.isNaN(qty) && qty !== null) existing.qty = qty;
+                inventoryStatus.textContent = `Updated inventory for DMC ${code}.`;
+            } else {
+                dmcInventory.push({
+                    id: Date.now(),
+                    code,
+                    name: name || '',
+                    qty: Number.isNaN(qty) ? null : qty
+                });
+                inventoryStatus.textContent = `Added DMC ${code} to inventory.`;
+            }
+
+            saveInventoryToStorage();
+            renderInventory();
+
+            // Optionally clear inputs
+            // invCodeInput.value = '';
+            // invNameInput.value = '';
+            // invQtyInput.value = '';
         });
 
         // --- 3. Handle file selection (photo or camera) ---
@@ -556,16 +786,24 @@
                 bestMatchDiv.textContent = 'No matches found.';
                 matchesList.innerHTML = '';
                 resultsBox.style.display = 'block';
+                currentBestMatch = null;
                 return;
             }
 
             const best = topMatches[0];
+            currentBestMatch = best;  // <-- remember for "Save mapping"
+
             const bestLabel = qualityLabel(best.distance);
+            const ownedBest = dmcInventory.some(item => String(item.code) === String(best.code));
+            const ownedBadge = ownedBest
+                ? `<span style="margin-left:6px; font-size:0.8rem; color:#16a34a;">(in your inventory)</span>`
+                : '';
 
             bestMatchDiv.innerHTML = `
                 <div class="match-item">
                     <span class="match-swatch" style="background-color: rgb(${best.r}, ${best.g}, ${best.b});"></span>
-                    <span class="match-code">${best.code} – ${best.name}</span><br>
+                    <span class="match-code">DMC ${best.code} – ${best.name}</span>
+                    ${ownedBadge}<br>
                     <span>ΔE2000: ${best.distance.toFixed(2)} </span>
                     <span class="match-label">(${bestLabel})</span>
                 </div>
@@ -576,10 +814,16 @@
             for (let i = 1; i < topMatches.length; i++) {
                 const m = topMatches[i];
                 const label = qualityLabel(m.distance);
+                const owned = dmcInventory.some(item => String(item.code) === String(m.code));
+                const ownedTag = owned
+                    ? `<span style="margin-left:4px; font-size:0.75rem; color:#16a34a;">(owned)</span>`
+                    : '';
+
                 listHtml += `
                     <div class="match-item">
                         <span class="match-swatch" style="background-color: rgb(${m.r}, ${m.g}, ${m.b});"></span>
-                        <span class="match-code">${m.code} – ${m.name}</span>
+                        <span class="match-code">DMC ${m.code} – ${m.name}</span>
+                        ${ownedTag}
                         <span> | ΔE2000: ${m.distance.toFixed(2)}</span>
                         <span class="match-label"> (${label})</span>
                     </div>
@@ -589,6 +833,7 @@
 
             resultsBox.style.display = 'block';
         }
+
 
         // --- 7. Find top N closest matches using Lab + ΔE2000 ---
         function findClosestFlosses(sampleLab, count) {

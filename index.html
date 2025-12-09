@@ -40,13 +40,7 @@
             color: var(--text-muted);
         }
 
-        #fileInput {
-            margin-top: 8px;
-            width: 100%;
-            font-size: 0.9rem;
-        }
-
-        /* Top controls (button + select) */
+        /* Generic rows */
         .row {
             margin: 6px 0;
         }
@@ -59,21 +53,21 @@
             overflow: hidden;
             background: var(--card-bg);
             box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
-            position: relative; /* NEW: needed for absolute overlay */
+            position: relative;
         }
 
         #sampleOverlay {
             position: absolute;
             border: 2px solid var(--accent);
             border-radius: 4px;
-            pointer-events: none; /* so it doesn’t block taps */
+            pointer-events: none;
             display: none;
             box-sizing: border-box;
             box-shadow: 0 0 4px rgba(0,0,0,0.25);
         }
 
         canvas {
-            width: 100%;   /* full-width responsive */
+            width: 100%;
             height: auto;
             display: block;
             cursor: crosshair;
@@ -149,7 +143,6 @@
             box-shadow: none;
         }
 
-        /* Make white-ref button fill width on small screens */
         #setWhiteBtn {
             flex: 1 1 100%;
         }
@@ -168,8 +161,6 @@
             transform: translateY(1px);
         }
 
-        /* If you want the inline controls div to look nicer */
-        /* (You already have inline styles; this just complements them) */
         div[style*="flex; flex-wrap"] {
             margin-top: 12px;
         }
@@ -205,31 +196,17 @@
             margin-left: 4px;
         }
 
-        /* Make headings inside results stand out a bit */
         #results strong {
             font-size: 0.95rem;
         }
 
-        /* Slightly scale things up on larger screens (desktop/tablet) */
-        @media (min-width: 768px) {
-            body {
-                max-width: 700px;
-                padding-top: 24px;
-            }
-            h1 {
-                font-size: 1.5rem;
-            }
-            p {
-                font-size: 0.95rem;
-            }
-        }
-
         .name-warning {
-            color: #dc2626; /* Tailwind red-600 */
+            color: #dc2626;
             font-weight: 600;
             cursor: pointer;
         }
 
+        /* Tabs */
         .tabButton {
             padding: 6px 12px;
             border-radius: 999px;
@@ -244,13 +221,24 @@
             border-color: var(--accent);
         }
 
+        @media (min-width: 768px) {
+            body {
+                max-width: 700px;
+                padding-top: 24px;
+            }
+            h1 {
+                font-size: 1.5rem;
+            }
+            p {
+                font-size: 0.95rem;
+            }
+        }
     </style>
-
 </head>
 <body>
     <h1>Floss Matcher</h1>
     <div id="appVersion" style="text-align:center; font-size:0.75rem; color:#777; margin-top:2px;">
-        v0.3.1
+        v0.3.0
     </div>
 
     <div style="margin-top:8px; display:flex; gap:8px; justify-content:center; font-size:0.85rem;">
@@ -258,15 +246,15 @@
         <button id="tabReference" type="button" class="tabButton">DMC Reference</button>
     </div>
 
+    <!-- MATCHER PAGE -->
     <div id="matcherPage">
         <p>
             1. Choose or take a photo of your threads.<br>
-            2. (Optional) Select a white area for colour balance correction.<br>
+            2. Calibrate with your grey / white / black cards (optional but recommended).<br>
             3. Tap on the image to sample a colour.<br>
             4. The app will show the nearest match of DMC threads.
         </p>
 
-        <!-- On iPhone, this will let you either pick from Photos or use the camera -->
         <input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none;">
 
         <button id="fileButton" type="button" class="primaryButton">
@@ -274,7 +262,7 @@
         </button>
 
         <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
-            <button id="setWhiteBtn">Tap image to set white reference</button>
+            <button id="setWhiteBtn">Quick white ref (optional)</button>
             <label>
                 Matches to show:
                 <select id="matchCount">
@@ -286,6 +274,20 @@
 
         <div id="wbStatus" class="row" style="margin-top:6px; font-size:0.85rem; opacity:0.8;">
             No white reference set. For better accuracy, include a white/neutral card in your photo and set it as reference.
+        </div>
+
+        <!-- 3-card calibration panel -->
+        <div id="calibrationPanel" style="margin-top:12px; font-size:0.85rem;">
+            <strong>Calibration (3-card)</strong>
+            <div id="calibrationStatus" style="margin-top:4px; color:#666;">
+                Not calibrated. When your reference cards arrive, tap “Start calibration”.
+            </div>
+            <button id="startCalibBtn" type="button" style="margin-top:6px; font-size:0.8rem;">
+                Start calibration (grey → white → black)
+            </button>
+            <button id="resetCalibBtn" type="button" style="margin-top:6px; margin-left:4px; font-size:0.8rem;">
+                Reset
+            </button>
         </div>
 
         <div id="canvasWrapper">
@@ -351,14 +353,15 @@
             • The code is correct but not part of the floss set you loaded.<br><br>
             You may enter the thread name manually if you know it.
         </div>
-    </div> <!-- end matcherPage -->
+    </div>
 
+    <!-- DMC REFERENCE PAGE -->
     <div id="referencePage" style="display:none; margin-top:12px;">
         <div id="dmcRefStatus" style="font-size:0.8rem; color:#666; margin-bottom:6px;">
             Loading DMC palette...
         </div>
         <div id="dmcRefList"
-            style="max-height:60vh; overflow-y:auto; border-radius:10px;
+             style="max-height:60vh; overflow-y:auto; border-radius:10px;
                     border:1px solid var(--border); background:#ffffff; padding:8px;">
         </div>
     </div>
@@ -367,15 +370,31 @@
     <img id="hiddenImage" alt="" style="display:none;">
 
     <script>
-        const APP_VERSION = "0.3.1";
+        const APP_VERSION = "0.3.0";
         document.getElementById("appVersion").textContent = "v" + APP_VERSION;
 
-        // Global palette (filled after JSON loads, with Lab precomputed)
+        // Global palette
         let FLOSS_COLORS = [];
 
-        // White-balance calibration state
+        // Old single white-ref state (optional)
         let calibrationMode = false;
-        let whiteRefLab = null;  // Lab of reference white/neutral
+        let whiteRefLab = null;
+
+        // 3-card calibration state
+        let calibPhase = null; // null | 'grey' | 'white' | 'black'
+        let calibMeasured = {
+            grey:  null,
+            white: null,
+            black: null
+        };
+        let calibReady = false;
+
+        // Targets from your reference card manufacturer
+        const CARD_TARGETS = {
+            grey:  { r: 162, g: 162, b: 160 },
+            white: { r: 220, g: 224, b: 223 },
+            black: { r: 16,  g: 16,  b: 15 }
+        };
 
         const fileInput     = document.getElementById('fileInput');
         const hiddenImage   = document.getElementById('hiddenImage');
@@ -393,21 +412,13 @@
         const wbStatus      = document.getElementById('wbStatus');
 
         const sampleOverlay = document.getElementById('sampleOverlay');
+        const fileButton    = document.getElementById('fileButton');
 
-        const SAMPLE_RADIUS      = 10; // for normal colour sampling
-        const WHITE_SAMPLE_RADIUS = 15; // a bit larger area for white reference
+        const calibrationStatus = document.getElementById('calibrationStatus');
+        const startCalibBtn      = document.getElementById('startCalibBtn');
+        const resetCalibBtn      = document.getElementById('resetCalibBtn');
 
-        let previewActive = false;
-        let previewCanvasX = 0;
-        let previewCanvasY = 0;
-
-        const fileButton = document.getElementById('fileButton');
-
-        fileButton.addEventListener('click', () => {
-            fileInput.click();
-        });        
-
-        // Pack mapping & inventory UI elements
+        // Pack mapping & inventory elements
         const packNameInput      = document.getElementById('packNameInput');
         const packSlotInput      = document.getElementById('packSlotInput');
         const saveMappingBtn     = document.getElementById('saveMappingBtn');
@@ -422,17 +433,7 @@
         const inventoryStatus    = document.getElementById('inventoryStatus');
         const inventoryList      = document.getElementById('inventoryList');
 
-        let currentBestMatch = null;
-
-        let savedMappings = [];
-        let dmcInventory  = [];
-
-        const STORAGE_KEY_MAPPINGS  = 'flossMappingsV1';
-        const STORAGE_KEY_INVENTORY = 'flossInventoryV1';
-
-        loadStateFromStorage();
-        renderMappings();
-        renderInventory();
+        const nameHintBox        = document.getElementById('nameHintBox');
 
         // Tabs & pages
         const tabMatcher    = document.getElementById('tabMatcher');
@@ -441,9 +442,23 @@
         const referencePage = document.getElementById('referencePage');
         const dmcRefStatus  = document.getElementById('dmcRefStatus');
         const dmcRefList    = document.getElementById('dmcRefList');
-        const nameHintBox        = document.getElementById('nameHintBox');
 
-        // ---- Tab Switching Helper (PUT THIS HERE) ----
+        // Sampling constants
+        const SAMPLE_RADIUS       = 5;  // normal sampling area
+        const WHITE_SAMPLE_RADIUS = 7;  // for quick white ref (older mode)
+
+        let previewActive = false;
+        let previewCanvasX = 0;
+        let previewCanvasY = 0;
+
+        let currentBestMatch = null;
+        let savedMappings = [];
+        let dmcInventory  = [];
+
+        const STORAGE_KEY_MAPPINGS  = 'flossMappingsV1';
+        const STORAGE_KEY_INVENTORY = 'flossInventoryV1';
+
+        // ------- Tab logic -------
         function setActiveTab(name) {
             if (name === 'matcher') {
                 matcherPage.style.display   = 'block';
@@ -455,90 +470,14 @@
                 referencePage.style.display = 'block';
                 tabMatcher.classList.remove('tab-active');
                 tabReference.classList.add('tab-active');
-                renderDmcReference(); // ensures reference lists when opened
+                renderDmcReference();
             }
         }
 
-        // Tab button listeners (also here)
         tabMatcher.addEventListener('click', () => setActiveTab('matcher'));
         tabReference.addEventListener('click', () => setActiveTab('reference'));
 
-        // --- 1. Load DMC palette from JSON and precompute Lab values ---
-        fetch('dmc_palette.json?v=' + APP_VERSION)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Could not load dmc_palette.json');
-                }
-                return response.json();
-            })
-            .then(data => {
-                FLOSS_COLORS = data.map(c => ({
-                    ...c,
-                    lab: rgbToLab(c.r, c.g, c.b)
-                }));
-                console.log('Loaded DMC colours:', FLOSS_COLORS.length);
-                // If user has opened the reference tab, render it
-                renderDmcReference();
-            })
-            .catch(err => {
-                console.error(err);
-                alert('Could not load DMC palette. Check that dmc_palette.json is in the same folder as index.html.');
-            });
-
-                
-        function autoFillInventoryName() {
-            // If user has already entered a custom name (not just '!'), don't overwrite it
-            if (invNameInput.value && invNameInput.value !== '!') {
-                return;
-            }
-
-            const brandRaw = invBrandInput.value.trim();
-            const brand = brandRaw || 'DMC';
-
-            // Only attempt name auto-fill for DMC brand
-            if (brand.toUpperCase() !== 'DMC') {
-                return;
-            }
-
-            const code = invCodeInput.value.trim();
-            if (!code || !FLOSS_COLORS.length) {
-                return;
-            }
-
-            // Find matching DMC code in palette
-            const match = FLOSS_COLORS.find(fl => String(fl.code) === code);
-
-            // Close any previous hints
-            nameHintBox.style.display = 'none';
-
-            if (match && match.name) {
-                // Good match → fill name normally and clear any warning behaviour
-                invNameInput.classList.remove('name-warning');
-                invNameInput.onclick = null;              // IMPORTANT: clear old onclick
-                invNameInput.value = match.name;
-                return;
-            }
-
-            // No match → show '!'. Make it red and clickable.
-            invNameInput.value = '!';
-            invNameInput.classList.add('name-warning');
-
-            // Clicking the red '!' opens the hint
-            invNameInput.onclick = () => {
-                nameHintBox.style.display = 'block';
-            };
-        }
-
-            // --- 2. White reference button ---
-        setWhiteBtn.addEventListener('click', () => {
-            if (!canvas.width || !canvas.height) {
-                alert('Please load a photo first, then tap the white/neutral card in the image.');
-                return;
-            }
-            calibrationMode = true;
-            wbStatus.textContent = 'Calibration mode: tap a white/neutral card area in the image to set white reference.';
-        });
-
+        // ------- Local storage load/save -------
         function loadStateFromStorage() {
             try {
                 const rawMappings = localStorage.getItem(STORAGE_KEY_MAPPINGS);
@@ -575,13 +514,79 @@
             }
         }
 
+        // ------- File button -------
+        fileButton.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // ------- Auto-fill inventory name from DMC palette -------
+        function autoFillInventoryName() {
+            // Avoid overwriting a custom name
+            if (invNameInput.value && invNameInput.value !== '!') {
+                return;
+            }
+
+            const brandRaw = invBrandInput.value.trim();
+            const brand = brandRaw || 'DMC';
+
+            if (brand.toUpperCase() !== 'DMC') {
+                return;
+            }
+
+            const code = invCodeInput.value.trim();
+            if (!code || !FLOSS_COLORS.length) {
+                return;
+            }
+
+            const match = FLOSS_COLORS.find(fl => String(fl.code) === code);
+
+            nameHintBox.style.display = 'none';
+
+            if (match && match.name) {
+                invNameInput.classList.remove('name-warning');
+                invNameInput.onclick = null;
+                invNameInput.value = match.name;
+                return;
+            }
+
+            // No match
+            invNameInput.value = '!';
+            invNameInput.classList.add('name-warning');
+            invNameInput.onclick = () => {
+                nameHintBox.style.display = 'block';
+            };
+        }
+
+        invCodeInput.addEventListener('blur', autoFillInventoryName);
+        invCodeInput.addEventListener('change', autoFillInventoryName);
+        invBrandInput.addEventListener('blur', autoFillInventoryName);
+        invBrandInput.addEventListener('change', autoFillInventoryName);
+
+        invNameInput.addEventListener('input', () => {
+            if (invNameInput.value !== '!') {
+                invNameInput.classList.remove('name-warning');
+                invNameInput.onclick = null;
+                nameHintBox.style.display = 'none';
+            }
+        });
+
+        // ------- White reference button (legacy quick WB) -------
+        setWhiteBtn.addEventListener('click', () => {
+            if (!canvas.width || !canvas.height) {
+                alert('Please load a photo first, then tap the white/neutral card in the image.');
+                return;
+            }
+            calibrationMode = true;
+            wbStatus.textContent = 'Calibration mode: tap a white/neutral card area in the image to set white reference.';
+        });
+
+        // ------- Rendering: mappings -------
         function renderMappings() {
             if (!savedMappings.length) {
                 mappingsList.textContent = 'No pack mappings saved yet.';
                 return;
             }
 
-            // Group by pack name
             const byPack = {};
             for (const m of savedMappings) {
                 const key = m.packName || '(Unnamed pack)';
@@ -619,6 +624,7 @@
             mappingsList.innerHTML = html;
         }
 
+        // ------- Rendering: inventory -------
         function renderInventory() {
             if (!dmcInventory.length) {
                 inventoryList.textContent = 'No threads added yet.';
@@ -648,6 +654,7 @@
             inventoryList.innerHTML = html;
         }
 
+        // ------- Rendering: DMC Reference -------
         function renderDmcReference() {
             if (!FLOSS_COLORS.length) {
                 dmcRefStatus.textContent = 'Palette not loaded yet. Please wait a moment or reload.';
@@ -663,11 +670,20 @@
 
             let html = '';
             sorted.forEach(c => {
+                const owned = dmcInventory.some(
+                    item =>
+                        String(item.code) === String(c.code) &&
+                        (item.brand || 'DMC') === 'DMC'
+                );
+                const ownedTag = owned
+                    ? `<span style="margin-left:4px; font-size:0.75rem; color:#16a34a;">[Owned]</span>`
+                    : '';
                 html += `
                     <div style="display:flex; align-items:center; gap:8px; padding:4px 2px; border-bottom:1px solid #eee;">
                         <span style="width:18px; height:18px; border-radius:4px; border:1px solid #ccc; background: rgb(${c.r}, ${c.g}, ${c.b});"></span>
                         <span style="font-size:0.85rem; min-width:60px;"><strong>${c.code}</strong></span>
                         <span style="font-size:0.85rem; flex:1 1 auto;">${c.name || ''}</span>
+                        ${ownedTag}
                     </div>
                 `;
             });
@@ -675,6 +691,7 @@
             dmcRefList.innerHTML = html;
         }
 
+        // ------- Mapping button -------
         saveMappingBtn.addEventListener('click', () => {
             saveMappingStatus.textContent = '';
 
@@ -695,7 +712,7 @@
                 id: Date.now(),
                 packName,
                 slot,
-                brand: 'DMC', // for now all matches are DMC
+                brand: 'DMC',
                 code: currentBestMatch.code,
                 name: currentBestMatch.name,
                 r: currentBestMatch.r,
@@ -710,6 +727,7 @@
             saveMappingStatus.textContent = `Saved: ${packName} / ${slot} → DMC ${mapping.code}`;
         });
 
+        // ------- Inventory button -------
         addInventoryBtn.addEventListener('click', () => {
             inventoryStatus.textContent = '';
 
@@ -727,7 +745,6 @@
 
             const qty = qtyRaw === '' ? null : Number(qtyRaw);
 
-            // If code already exists, update it
             const existing = dmcInventory.find(
                 item => String(item.code) === String(code) && (item.brand || 'DMC') === brand
             );
@@ -750,55 +767,29 @@
 
             saveInventoryToStorage();
             renderInventory();
-
-            // Optionally clear inputs
-            // invCodeInput.value = '';
-            // invNameInput.value = '';
-            // invQtyInput.value = '';
         });
 
-        // Try to auto-fill Name when brand/code changes
-        invCodeInput.addEventListener('blur', autoFillInventoryName);
-        invCodeInput.addEventListener('change', autoFillInventoryName);
-
-        // If you change brand, re-run the lookup as well
-        invBrandInput.addEventListener('blur', autoFillInventoryName);
-        invBrandInput.addEventListener('change', autoFillInventoryName);
-
-        // If user edits Name manually, remove warning style & onclick
-        invNameInput.addEventListener('input', () => {
-            if (invNameInput.value !== '!') {
-                invNameInput.classList.remove('name-warning');
-                invNameInput.onclick = null;
-                nameHintBox.style.display = 'none';
-            }
-        });
-
-        // Delete mapping via event delegation
+        // ------- Delete handlers -------
         mappingsList.addEventListener('click', (e) => {
             if (!e.target.classList.contains('delete-mapping')) return;
-
             const id = Number(e.target.dataset.id);
             if (!id) return;
-
             savedMappings = savedMappings.filter(m => m.id !== id);
             saveMappingsToStorage();
             renderMappings();
         });
 
-        // Delete inventory item via event delegation
         inventoryList.addEventListener('click', (e) => {
             if (!e.target.classList.contains('delete-inventory')) return;
-
             const id = Number(e.target.dataset.id);
             if (!id) return;
-
             dmcInventory = dmcInventory.filter(item => item.id !== id);
             saveInventoryToStorage();
             renderInventory();
+            renderDmcReference();
         });
 
-        // --- 3. Handle file selection (photo or camera) ---
+        // ------- File input -------
         fileInput.addEventListener('change', function (event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -807,10 +798,19 @@
             reader.onload = function (e) {
                 hiddenImage.onload = function () {
                     drawImageToCanvas(hiddenImage);
-                    // Reset calibration when a new image is loaded
+
+                    // Reset WB + calibration on new image
                     calibrationMode = false;
                     whiteRefLab = null;
                     wbStatus.textContent = 'No white reference set. For better accuracy, include a white/neutral card in your photo and set it as reference.';
+
+                    calibPhase = null;
+                    calibMeasured.grey  = null;
+                    calibMeasured.white = null;
+                    calibMeasured.black = null;
+                    calibReady = false;
+                    calibrationStatus.textContent =
+                        'Not calibrated. When your reference cards arrive, tap “Start calibration”.';
                 };
                 hiddenImage.src = e.target.result;
             };
@@ -818,7 +818,7 @@
         });
 
         function drawImageToCanvas(img) {
-            const maxDisplayWidth = 500; // pixels
+            const maxDisplayWidth = 500;
             let displayWidth = img.width;
             let displayHeight = img.height;
 
@@ -837,7 +837,7 @@
             resultsBox.style.display = 'none';
         }
 
-        // Sample an average colour in a square area around (centerX, centerY)
+        // ------- Sampling helpers -------
         function sampleAverageRGB(centerX, centerY, radius) {
             const x0 = Math.max(0, centerX - radius);
             const y0 = Math.max(0, centerY - radius);
@@ -853,10 +853,9 @@
             const numPixels = width * height;
 
             for (let i = 0; i < imgData.length; i += 4) {
-                sumR += imgData[i];     // R
-                sumG += imgData[i + 1]; // G
-                sumB += imgData[i + 2]; // B
-                // alpha (imgData[i + 3]) ignored
+                sumR += imgData[i];
+                sumG += imgData[i + 1];
+                sumB += imgData[i + 2];
             }
 
             return {
@@ -869,7 +868,6 @@
         function updatePreviewAt(clientX, clientY) {
             const rect = canvas.getBoundingClientRect();
 
-            // Scale from CSS pixels to canvas pixels
             const scaleX = canvas.width  / rect.width;
             const scaleY = canvas.height / rect.height;
 
@@ -879,7 +877,6 @@
             previewCanvasX = Math.floor(cx);
             previewCanvasY = Math.floor(cy);
 
-            // Size of sampling box in CSS pixels
             const boxWidthCss  = (2 * SAMPLE_RADIUS + 1) * (rect.width  / canvas.width);
             const boxHeightCss = (2 * SAMPLE_RADIUS + 1) * (rect.height / canvas.height);
 
@@ -902,7 +899,13 @@
                 radius
             );
 
-            // If we're in calibration mode, treat this as white reference
+            // 3-card calibration flow
+            if (calibPhase) {
+                handleCalibrationTap(rawR, rawG, rawB);
+                return;
+            }
+
+            // Legacy single white ref
             if (calibrationMode) {
                 calibrationMode = false;
                 setWhiteReference(rawR, rawG, rawB);
@@ -917,7 +920,7 @@
             showSampleAndMatches(rawR, rawG, rawB);
         }
 
-        /* --- Mouse events (desktop) --- */
+        // Mouse events
         canvas.addEventListener('mousedown', function (e) {
             if (!canvas.width || !canvas.height) return;
             previewActive = true;
@@ -936,7 +939,7 @@
             handleSampleAtCurrentPreview();
         });
 
-        /* --- Touch events (phone/tablet) --- */
+        // Touch events
         canvas.addEventListener('touchstart', function (e) {
             if (!canvas.width || !canvas.height) return;
             e.preventDefault();
@@ -964,11 +967,10 @@
             sampleOverlay.style.display = 'none';
         });
 
-        // --- 5. Set white reference in Lab space ---
+        // ------- White reference in Lab (legacy) -------
         function setWhiteReference(r, g, b) {
             const lab = rgbToLab(r, g, b);
 
-            // Lab L* is 0–100; avoid super dark areas as white references
             if (lab.L < 50) {
                 alert('That area is too dark to be a white reference. Please choose a brighter white/neutral area.');
                 wbStatus.textContent = 'White reference not set – chosen area was too dark.';
@@ -983,21 +985,136 @@
             `;
         }
 
-        // --- 6. Show sampled colour + top N closest DMC matches (ΔE2000) ---
+        // ------- 3-card calibration helpers -------
+        function handleCalibrationTap(r, g, b) {
+            if (calibPhase === 'grey') {
+                calibMeasured.grey = { r, g, b };
+                calibPhase = 'white';
+                calibrationStatus.textContent =
+                    'Step 2/3: Tap the white card in the image.';
+                return;
+            }
+
+            if (calibPhase === 'white') {
+                calibMeasured.white = { r, g, b };
+                calibPhase = 'black';
+                calibrationStatus.textContent =
+                    'Step 3/3: Tap the black card in the image.';
+                return;
+            }
+
+            if (calibPhase === 'black') {
+                calibMeasured.black = { r, g, b };
+                calibPhase = null;
+                buildCalibrationModel();
+                return;
+            }
+        }
+
+        function clamp255(v) {
+            return Math.min(255, Math.max(0, Math.round(v)));
+        }
+
+        function applyChannelCalibration(value, mB, mG, mW, tB, tG, tW) {
+            if (
+                mB == null || mG == null || mW == null ||
+                mB === mG || mG === mW
+            ) {
+                return value;
+            }
+
+            if (value <= mG) {
+                const slope = (tG - tB) / (mG - mB);
+                const intercept = tB - slope * mB;
+                return clamp255(slope * value + intercept);
+            } else {
+                const slope = (tW - tG) / (mW - mG);
+                const intercept = tG - slope * mG;
+                return clamp255(slope * value + intercept);
+            }
+        }
+
+        function buildCalibrationModel() {
+            const mGrey  = calibMeasured.grey;
+            const mWhite = calibMeasured.white;
+            const mBlack = calibMeasured.black;
+
+            if (!mGrey || !mWhite || !mBlack) {
+                calibrationStatus.textContent =
+                    'Calibration failed: please tap all three cards (grey, white, black).';
+                calibReady = false;
+                return;
+            }
+
+            calibReady = true;
+            calibrationStatus.textContent =
+                'Calibration ready. All future samples from this photo will use 3-card correction.';
+        }
+
+        startCalibBtn.addEventListener('click', () => {
+            if (!canvas.width || !canvas.height) {
+                alert('Load a photo with your grey, white, and black cards first.');
+                return;
+            }
+            calibPhase = 'grey';
+            calibMeasured.grey  = null;
+            calibMeasured.white = null;
+            calibMeasured.black = null;
+            calibReady = false;
+            calibrationStatus.textContent =
+                'Step 1/3: Tap the 18% grey card in the image (avoid shadows).';
+        });
+
+        resetCalibBtn.addEventListener('click', () => {
+            calibPhase = null;
+            calibMeasured.grey  = null;
+            calibMeasured.white = null;
+            calibMeasured.black = null;
+            calibReady = false;
+            calibrationStatus.textContent =
+                'Not calibrated. When your reference cards arrive, tap “Start calibration”.';
+        });
+
+        // ------- Show sample + matches -------
         function showSampleAndMatches(r, g, b) {
+            // Apply 3-card calibration if ready
+            if (calibReady) {
+                const mG = calibMeasured.grey;
+                const mW = calibMeasured.white;
+                const mB = calibMeasured.black;
+
+                const cR = applyChannelCalibration(
+                    r,
+                    mB.r, mG.r, mW.r,
+                    CARD_TARGETS.black.r, CARD_TARGETS.grey.r, CARD_TARGETS.white.r
+                );
+                const cG = applyChannelCalibration(
+                    g,
+                    mB.g, mG.g, mW.g,
+                    CARD_TARGETS.black.g, CARD_TARGETS.grey.g, CARD_TARGETS.white.g
+                );
+                const cB = applyChannelCalibration(
+                    b,
+                    mB.b, mG.b, mW.b,
+                    CARD_TARGETS.black.b, CARD_TARGETS.grey.b, CARD_TARGETS.white.b
+                );
+
+                r = cR;
+                g = cG;
+                b = cB;
+            }
+
             const hex = rgbToHex(r, g, b);
-            // Display the raw camera colour (do NOT white-balance visually)
             sampleSwatch.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
-            rgbText.textContent = `RGB (image): (${r}, ${g}, ${b})  |  Hex: ${hex}`;
+            rgbText.textContent = `RGB (corrected): (${r}, ${g}, ${b})  |  Hex: ${hex}`;
 
             const count = parseInt(matchCountSel.value, 10) || 5;
 
-            // Convert sample to Lab, then optionally "neutralize" using white reference
             const sampleLabRaw = rgbToLab(r, g, b);
             let sampleLabForMatching = sampleLabRaw;
 
+            // Optional extra Lab-level WB tweak
             if (whiteRefLab) {
-                // Subtract the white reference's a/b to remove colour cast, keep lightness
                 sampleLabForMatching = {
                     L: sampleLabRaw.L,
                     a: sampleLabRaw.a - whiteRefLab.a,
@@ -1016,7 +1133,7 @@
             }
 
             const best = topMatches[0];
-            currentBestMatch = best;  // <-- remember for "Save mapping"
+            currentBestMatch = best;
 
             const bestLabel = qualityLabel(best.distance);
             const ownedBest = dmcInventory.some(
@@ -1038,7 +1155,6 @@
                 </div>
             `;
 
-            // Build list of remaining matches
             let listHtml = '';
             for (let i = 1; i < topMatches.length; i++) {
                 const m = topMatches[i];
@@ -1067,7 +1183,7 @@
             resultsBox.style.display = 'block';
         }
 
-        // --- 7. Find top N closest matches using Lab + ΔE2000 ---
+        // ------- Matching helpers -------
         function findClosestFlosses(sampleLab, count) {
             const withDistances = FLOSS_COLORS.map(fl => ({
                 ...fl,
@@ -1077,7 +1193,6 @@
             return withDistances.slice(0, Math.min(count, withDistances.length));
         }
 
-        // --- 8. Map ΔE2000 to a simple quality label ---
         function qualityLabel(dE) {
             if (dE < 1)   return 'Perfect / indistinguishable';
             if (dE < 2)   return 'Excellent match';
@@ -1087,26 +1202,20 @@
             return 'Rough / far off';
         }
 
-        // --- 9. RGB -> Lab conversion helpers ---
-
-        // Convert sRGB (0–255) to Lab (D65)
+        // ------- Colour conversions -------
         function rgbToLab(r, g, b) {
-            // 1) Normalize to 0–1
             let R = r / 255;
             let G = g / 255;
             let B = b / 255;
 
-            // 2) Linearize sRGB
             R = R <= 0.04045 ? R / 12.92 : Math.pow((R + 0.055) / 1.055, 2.4);
             G = G <= 0.04045 ? G / 12.92 : Math.pow((G + 0.055) / 1.055, 2.4);
             B = B <= 0.04045 ? B / 12.92 : Math.pow((B + 0.055) / 1.055, 2.4);
 
-            // 3) Convert to XYZ (Observer = 2°, Illuminant = D65)
             let X = R * 0.4124 + G * 0.3576 + B * 0.1805;
             let Y = R * 0.2126 + G * 0.7152 + B * 0.0722;
             let Z = R * 0.0193 + G * 0.1192 + B * 0.9505;
 
-            // Reference white D65
             const refX = 0.95047;
             const refY = 1.00000;
             const refZ = 1.08883;
@@ -1115,7 +1224,6 @@
             Y /= refY;
             Z /= refZ;
 
-            // 4) XYZ to Lab
             X = xyzToLabHelper(X);
             Y = xyzToLabHelper(Y);
             Z = xyzToLabHelper(Z);
@@ -1134,7 +1242,6 @@
                 : (t / (3 * Math.pow(delta, 2))) + (4 / 29);
         }
 
-        // --- 10. ΔE2000 implementation ---
         function deltaE2000(lab1, lab2) {
             const L1 = lab1.L;
             const a1 = lab1.a;
@@ -1231,14 +1338,39 @@
             return (rad * 180) / Math.PI;
         }
 
-        // --- 11. Utility: RGB → Hex string ---
         function rgbToHex(r, g, b) {
             return "#" + [r, g, b].map(function (x) {
                 const hex = x.toString(16);
                 return hex.length === 1 ? "0" + hex : hex;
             }).join("");
         }
-    </script>
 
+        // ------- Palette load -------
+        fetch('dmc_palette.json?v=' + APP_VERSION)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Could not load dmc_palette.json');
+                }
+                return response.json();
+            })
+            .then(data => {
+                FLOSS_COLORS = data.map(c => ({
+                    ...c,
+                    lab: rgbToLab(c.r, c.g, c.b)
+                }));
+                console.log('Loaded DMC colours:', FLOSS_COLORS.length);
+                renderDmcReference();
+            })
+            .catch(err => {
+                console.error(err);
+                alert('Could not load DMC palette. Check that dmc_palette.json is in the same folder as index.html.');
+            });
+
+        // ------- Init -------
+        loadStateFromStorage();
+        renderMappings();
+        renderInventory();
+        setActiveTab('matcher');
+    </script>
 </body>
 </html>

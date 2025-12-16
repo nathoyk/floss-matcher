@@ -238,7 +238,7 @@
 <body>
     <h1>Floss Matcher</h1>
     <div id="appVersion" style="text-align:center; font-size:0.75rem; color:#777; margin-top:2px;">
-        v0.3.0
+        v0.4.1
     </div>
 
     <div style="margin-top:8px; display:flex; gap:8px; justify-content:center; font-size:0.85rem;">
@@ -370,7 +370,7 @@
     <img id="hiddenImage" alt="" style="display:none;">
 
     <script>
-        const APP_VERSION = "0.3.0";
+        const APP_VERSION = "0.4.1";
         document.getElementById("appVersion").textContent = "v" + APP_VERSION;
 
         // Global palette
@@ -446,6 +446,7 @@
         // Sampling constants
         const SAMPLE_RADIUS       = 5;  // normal sampling area
         const WHITE_SAMPLE_RADIUS = 7;  // for quick white ref (older mode)
+        const CALIB_RADIUS = 25; // or 15–20, adjust by feel
 
         let previewActive = false;
         let previewCanvasX = 0;
@@ -891,7 +892,18 @@
         }
 
         function handleSampleAtCurrentPreview() {
-            const radius = calibrationMode ? WHITE_SAMPLE_RADIUS : SAMPLE_RADIUS;
+            let radius;
+
+            if (calibPhase) {
+                // 3-card calibration: use a larger radius on the card
+                radius = CALIB_RADIUS;
+            } else if (calibrationMode) {
+                // quick single white reference (old mode)
+                radius = WHITE_SAMPLE_RADIUS;
+            } else {
+                // normal thread sampling
+                radius = SAMPLE_RADIUS;
+            }
 
             const { r: rawR, g: rawG, b: rawB } = sampleAverageRGB(
                 previewCanvasX,
@@ -899,13 +911,11 @@
                 radius
             );
 
-            // 3-card calibration flow
             if (calibPhase) {
                 handleCalibrationTap(rawR, rawG, rawB);
                 return;
             }
 
-            // Legacy single white ref
             if (calibrationMode) {
                 calibrationMode = false;
                 setWhiteReference(rawR, rawG, rawB);
